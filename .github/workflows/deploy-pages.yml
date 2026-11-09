@@ -1,0 +1,73 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # local.properties is gitignored and only exists inside this runner.
+      # Only non-empty secrets are written so upstream defaults stay in effect
+      # for anything you have not configured.
+      - name: Write local.properties from secrets
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          NUVIO_SUPABASE_URL: ${{ secrets.NUVIO_SUPABASE_URL }}
+          NUVIO_SUPABASE_ANON_KEY: ${{ secrets.NUVIO_SUPABASE_ANON_KEY }}
+          TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+          TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
+          SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
+          MDBLIST_CLIENT_ID: ${{ secrets.MDBLIST_CLIENT_ID }}
+          PREMIUMIZE_CLIENT_ID: ${{ secrets.PREMIUMIZE_CLIENT_ID }}
+        run: |
+          : > local.properties
+          for key in TMDB_API_KEY NUVIO_SUPABASE_URL NUVIO_SUPABASE_ANON_KEY \
+                     TRAKT_CLIENT_ID TRAKT_CLIENT_SECRET SIMKL_CLIENT_ID \
+                     MDBLIST_CLIENT_ID PREMIUMIZE_CLIENT_ID; do
+            value="${!key}"
+            if [ -n "$value" ]; then
+              printf '%s=%s\n' "$key" "$value" >> local.properties
+            fi
+          done
+          if [ -z "$TMDB_API_KEY" ]; then
+            echo "::warning::TMDB_API_KEY secret is not set; the site will build without TMDB data."
+          fi
+
+      - run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
