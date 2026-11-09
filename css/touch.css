@@ -5,11 +5,11 @@
 
 html.touch-input .touch-back-btn {
   position: fixed;
-  top: 16px;
-  left: 16px;
+  top: calc(16 * var(--pt, 1px));
+  left: calc(16 * var(--pt, 1px));
   z-index: 9000;
-  width: 52px;
-  height: 52px;
+  width: calc(48 * var(--pt, 1px));
+  height: calc(48 * var(--pt, 1px));
   padding: 0;
   align-items: center;
   justify-content: center;
@@ -46,13 +46,13 @@ html.touch-input .home-sidebar.root-sidebar {
   position: fixed !important;
   top: auto !important;
   right: auto !important;
-  bottom: 18px !important;
+  bottom: calc(18 * var(--pt, 1px)) !important;
   left: 50% !important;
   z-index: 60;
   width: auto !important;
   height: auto !important;
   flex-basis: auto !important;
-  padding: 6px !important;
+  padding: calc(5 * var(--pt, 1px)) !important;
   flex-direction: row !important;
   align-items: center !important;
   overflow: visible !important;
@@ -74,17 +74,17 @@ html.touch-input .home-sidebar.root-sidebar .home-nav-list {
   flex: none !important;
   width: auto !important;
   flex-direction: row !important;
-  gap: 4px !important;
+  gap: calc(4 * var(--pt, 1px)) !important;
   transform: none !important;
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-item {
   width: auto !important;
-  height: 56px !important;
-  padding: 0 24px !important;
-  gap: 10px !important;
+  height: calc(48 * var(--pt, 1px)) !important;
+  padding: 0 calc(20 * var(--pt, 1px)) !important;
+  gap: calc(8 * var(--pt, 1px)) !important;
   border-radius: 999px !important;
-  font-size: 20px !important;
+  font-size: calc(16 * var(--pt, 1px)) !important;
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-item.selected {
@@ -96,8 +96,8 @@ html.touch-input .home-sidebar.root-sidebar .home-nav-label {
   width: auto !important;
   opacity: 1 !important;
   transform: none !important;
-  font-size: 20px !important;
-  line-height: 28px !important;
+  font-size: calc(16 * var(--pt, 1px)) !important;
+  line-height: calc(22 * var(--pt, 1px)) !important;
 }
 
 html.touch-input .home-shell::before {
@@ -106,7 +106,7 @@ html.touch-input .home-shell::before {
 
 html.touch-input .home-main {
   margin-left: 0 !important;
-  padding-bottom: 120px !important;
+  padding-bottom: calc(96 * var(--pt, 1px)) !important;
 }
 
 /* Settings: the rail is now a bottom bar, so use the full width and let the
@@ -121,7 +121,7 @@ html.touch-input .settings-shell .settings-workspace {
 }
 
 /* Login: stack the two panels on narrow (portrait) screens. */
-@media (max-width: 900px) {
+@media (orientation: portrait) {
   html.touch-input .qr-layout {
     height: 100vh;
     overflow-y: auto;

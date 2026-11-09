@@ -7,6 +7,16 @@ import {
 
 const KEY = "layoutPreferences";
 
+// Touch screens have no "focused card", so the TV behavior of expanding the
+// first poster into a wide backdrop just looks odd there.
+function prefersTouchLayout() {
+  try {
+    return Boolean(globalThis.matchMedia?.("(pointer: coarse)")?.matches);
+  } catch (_) {
+    return false;
+  }
+}
+
 const DEFAULTS = {
   customPosterUrlPattern: "",
   customPosterEnabledScreens: [
@@ -32,7 +42,7 @@ const DEFAULTS = {
   alwaysShowLandscapeClearlogo: false,
   modernHeroFullScreenBackdropEnabled: false,
   classicFocusGradientEnabled: false,
-  focusedPosterBackdropExpandEnabled: true,
+  focusedPosterBackdropExpandEnabled: !prefersTouchLayout(),
   focusedPosterBackdropExpandDelaySeconds: 3,
   focusedPosterBackdropTrailerEnabled: false,
   focusedPosterBackdropTrailerMuted: true,
