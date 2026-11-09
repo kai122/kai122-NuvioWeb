@@ -108,3 +108,52 @@ html.touch-input .home-main {
   margin-left: 0 !important;
   padding-bottom: 120px !important;
 }
+
+/* Settings: the rail is now a bottom bar, so use the full width and let the
+   two columns scale (portrait iPads squeezed the content pane to a sliver). */
+html.touch-input .settings-shell .settings-workspace {
+  width: calc(100vw - 48px) !important;
+  height: calc(100vh - 128px) !important;
+  margin: 24px !important;
+  padding: 28px !important;
+  gap: 20px !important;
+  grid-template-columns: minmax(310px, 40%) minmax(0, 1fr) !important;
+}
+
+/* Login: stack the two panels on narrow (portrait) screens. */
+@media (max-width: 900px) {
+  html.touch-input .qr-layout {
+    height: 100vh;
+    overflow-y: auto;
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    align-content: start;
+    gap: 16px;
+    padding: 72px 24px 32px;
+  }
+
+  html.touch-input .qr-left-panel {
+    width: 100%;
+  }
+
+  html.touch-input .qr-card {
+    width: min(560px, 100%);
+    height: auto;
+  }
+
+  html.touch-input .qr-code-frame {
+    width: min(260px, 100%);
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  html.touch-input .qr-actions {
+    flex-wrap: wrap;
+  }
+
+  html.touch-input .qr-action-btn {
+    height: 64px;
+    padding: 0 24px;
+    font-size: 22px;
+  }
+}
