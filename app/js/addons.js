@@ -28,6 +28,12 @@ export function normalizeManifestUrl(input) {
   if (!url) return "";
   if (url.startsWith("stremio://")) url = `https://${url.slice("stremio://".length)}`;
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+  } catch (_) {
+    return "";
+  }
   if (!/\/manifest\.json(\?.*)?$/i.test(url)) url = `${url.replace(/\/+$/, "")}/manifest.json`;
   return url;
 }

@@ -1,4 +1,4 @@
-import { h, icon, fill } from "../dom.js";
+import { h, icon, fill, safeHttpUrl } from "../dom.js";
 import { back } from "../router.js";
 import { store } from "../store.js";
 import { takePlayback, externalPlayerLinks, copyLink } from "./streams.js";
@@ -8,6 +8,7 @@ const SAVE_EVERY_MS = 5000;
 export function renderPlayer() {
   const playback = takePlayback();
   const root = h("div.screen.screen-player");
+  if (playback) playback.url = safeHttpUrl(playback.url);
   if (!playback?.url) {
     queueMicrotask(() => back());
     return { el: root };

@@ -1,4 +1,4 @@
-import { h, icon, img, prefersReducedMotion, fill } from "../dom.js";
+import { h, icon, img, prefersReducedMotion, fill, safeImageUrl } from "../dom.js";
 import { listCatalogs, fetchCatalog, typeLabel } from "../addons.js";
 import { store } from "../store.js";
 import { navigate } from "../router.js";
@@ -64,9 +64,8 @@ function buildHero(items) {
     index = (i + items.length) % items.length;
     const item = items[index];
     const back = layers[1 - front];
-    back.style.backgroundImage = item.background
-      ? `url("${item.background.replace(/"/g, "%22")}")`
-      : "";
+    const bgUrl = safeImageUrl(item.background);
+    back.style.backgroundImage = bgUrl ? `url("${bgUrl.replace(/"/g, "%22")}")` : "";
     back.classList.add("is-front");
     layers[front].classList.remove("is-front");
     front = 1 - front;

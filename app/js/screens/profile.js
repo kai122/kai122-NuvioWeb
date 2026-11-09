@@ -1,4 +1,4 @@
-import { h, icon, fill } from "../dom.js";
+import { h, icon, fill, safeImageUrl } from "../dom.js";
 import { store } from "../store.js";
 import { navigate } from "../router.js";
 import { pageHeader } from "../components.js";
@@ -124,8 +124,8 @@ export function renderAddons() {
           h(
             "span.settings-icon",
             {},
-            manifest?.logo
-              ? h("img.addon-logo", { src: manifest.logo, alt: "" })
+            safeImageUrl(manifest?.logo)
+              ? h("img.addon-logo", { src: safeImageUrl(manifest.logo), alt: "" })
               : icon("puzzle", 22)
           ),
           h(

@@ -1,4 +1,4 @@
-import { h, icon, fill } from "../dom.js";
+import { h, icon, fill, safeHttpUrl } from "../dom.js";
 import { fetchStreams } from "../addons.js";
 import { openSheet, toast } from "../sheet.js";
 import { navigate } from "../router.js";
@@ -30,7 +30,7 @@ export function externalPlayerLinks(url) {
   return [
     { label: "Open in VLC", href: `vlc-x-callback://x-callback-url/stream?url=${encoded}` },
     { label: "Open in Infuse", href: `infuse://x-callback-url/play?url=${encoded}` },
-    { label: "Open in Outplayer", href: `outplayer://${url}` }
+    { label: "Open in Outplayer", href: `outplayer://${url.replace(/^https?:\/\//, "")}` }
   ];
 }
 
@@ -91,7 +91,7 @@ export function openStreams(context) {
   const play = (stream, addon) =>
     startPlayback({
       ...context,
-      url: stream.url,
+      url: safeHttpUrl(stream.url),
       streamTitle: streamLines(stream)[0] || stream.name || addon.manifest.name,
       addonName: addon.manifest.name
     });
@@ -101,7 +101,9 @@ export function openStreams(context) {
     total += streams.length;
     const group = h("div.stream-group", {}, h("div.stream-group-title", {}, addon.manifest.name));
     for (const stream of streams) {
-      const playable = Boolean(stream.url);
+      const playUrl = safeHttpUrl(stream.url);
+      const externalUrl = safeHttpUrl(stream.externalUrl);
+      const playable = Boolean(playUrl);
       const lines = streamLines(stream);
       const row = h(
         "div.stream-row",
@@ -114,8 +116,8 @@ export function openStreams(context) {
               if (playable) {
                 sheet.close();
                 play(stream, addon);
-              } else if (stream.externalUrl) {
-                window.open(stream.externalUrl, "_blank", "noopener");
+              } else if (externalUrl) {
+                window.open(externalUrl, "_blank", "noopener");
               } else if (stream.ytId) {
                 window.open(
                   `https://www.youtube.com/watch?v=${encodeURIComponent(stream.ytId)}`,
@@ -123,7 +125,11 @@ export function openStreams(context) {
                   "noopener"
                 );
               } else {
-                toast("Torrent streams can't play in a browser. Use a debrid add-on.");
+                toast(
+                  stream.infoHash
+                    ? "Torrent streams can't play in a browser. Use a debrid add-on."
+                    : "This stream has no playable link."
+                );
               }
             }
           },
@@ -136,7 +142,7 @@ export function openStreams(context) {
               {
                 type: "button",
                 "aria-label": "Other players",
-                onclick: () => openExternalSheet(stream.url, "Play with")
+                onclick: () => openExternalSheet(playUrl, "Play with")
               },
               icon("external", 20)
             )

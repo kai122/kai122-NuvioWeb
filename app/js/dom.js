@@ -70,13 +70,34 @@ export function icon(name, size = 24) {
   return span;
 }
 
+// Add-ons are third-party code. Only accept web links from them, never
+// javascript:, file: or other schemes that could run code in this app.
+export function safeHttpUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  try {
+    // Absolute links only: add-on URLs never need to be relative.
+    const url = new URL(text);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+export function safeImageUrl(value) {
+  const text = String(value || "");
+  if (/^data:image\/(png|jpe?g|gif|webp|svg\+xml)[;,]/i.test(text)) return text;
+  return safeHttpUrl(text);
+}
+
 export function img(src, cls = "", alt = "") {
   const el = document.createElement("img");
   if (cls) el.className = cls;
   el.alt = alt;
   el.decoding = "async";
   el.loading = "lazy";
-  if (src) el.src = src;
+  const safe = safeImageUrl(src);
+  if (safe) el.src = safe;
   el.addEventListener("error", () => el.classList.add("is-broken"), { once: true });
   return el;
 }
