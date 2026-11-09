@@ -2,8 +2,14 @@
 import * as internals from "./profileSelectionScreen.js";
 
 export function createProfileSelectionScreenMethods03() {
-  const { PROFILE_PIN_TEXT, getDefaultProfileColor, escapeHtml, centerAvatarRowInScrollContainer, findNearestByHorizontalCenter } =
-    internals;
+  const {
+    PROFILE_PIN_TEXT,
+    PROFILE_HOLD_DELAY_MS,
+    getDefaultProfileColor,
+    escapeHtml,
+    centerAvatarRowInScrollContainer,
+    findNearestByHorizontalCenter
+  } = internals;
 
   return {
     renderPinOverlay() {
@@ -64,10 +70,53 @@ export function createProfileSelectionScreenMethods03() {
           </div>
         `;
     },
+    // A remote opens the profile options by holding OK. Touch screens have no
+    // such key, so a long press on a profile card does the same.
+    bindTouchProfileHold(card) {
+      const profileId = String(card?.dataset?.profileId || "");
+      if (!profileId || profileId === "add") {
+        return;
+      }
+      let timer = null;
+      let fired = false;
+      const cancel = () => {
+        clearTimeout(timer);
+        timer = null;
+      };
+      card.addEventListener("pointerdown", (event) => {
+        if (event.pointerType !== "touch") {
+          return;
+        }
+        fired = false;
+        cancel();
+        timer = setTimeout(() => {
+          timer = null;
+          const profile = this.getProfileById(profileId);
+          if (profile) {
+            fired = true;
+            this.openOptionsDialog(profile);
+          }
+        }, PROFILE_HOLD_DELAY_MS);
+      });
+      ["pointerup", "pointercancel", "pointerleave"].forEach((type) => card.addEventListener(type, cancel));
+      // Swallow the click that ends the long press so it does not also select the profile.
+      card.addEventListener(
+        "click",
+        (event) => {
+          if (fired) {
+            fired = false;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        },
+        true
+      );
+    },
     bindEvents() {
       const gridCards = Array.from(this.container.querySelectorAll(".profile-card"));
       gridCards.forEach((card) => {
         card.addEventListener("focus", () => this.handleFocusableFocus(card));
+        this.bindTouchProfileHold(card);
         card.addEventListener("click", async () => {
           await this.activateFocusedNode(card);
         });

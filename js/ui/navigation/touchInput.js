@@ -5,12 +5,6 @@ import { Router } from "./routerState.js";
 // remote/D-pad paths untouched.
 const TOUCH_CLASS = "touch-input";
 const HOVER_GUARD_MS = 800;
-// The UI is designed for a 1920x1080 canvas. Rendering it at the iPad's native
-// CSS width makes everything ~1.6x too large, so lay it out at the design width
-// and let the browser scale it down (the same approach the TV builds use).
-const DESIGN_WIDTH_LANDSCAPE = 1920;
-const DESIGN_WIDTH_PORTRAIT = 1080;
-const MIN_TABLET_SHORT_SIDE = 600;
 // Must exceed the focus engine's Back debounce so the second press is not dropped.
 const PLAYER_BACK_REPEAT_MS = 320;
 const SIMULATED_MOUSE_EVENTS = ["mouseover", "mouseenter", "mousemove"];
@@ -31,46 +25,8 @@ let installed = false;
 let lastTouchAt = 0;
 let backButton = null;
 
-function isTouchMode() {
-  return document.documentElement.classList.contains(TOUCH_CLASS);
-}
-
-// Pick the design width for the current orientation and scale the page to fit.
-// Uses the physical screen size, not innerWidth, so changing the viewport tag
-// never feeds back into its own calculation.
-function applyViewportScale() {
-  if (!isTouchMode()) {
-    return;
-  }
-  const screenWidth = Number(globalThis.screen?.width) || 0;
-  const screenHeight = Number(globalThis.screen?.height) || 0;
-  const longSide = Math.max(screenWidth, screenHeight);
-  const shortSide = Math.min(screenWidth, screenHeight);
-  if (!shortSide || shortSide < MIN_TABLET_SHORT_SIDE) {
-    return;
-  }
-  const portrait = Boolean(globalThis.matchMedia?.("(orientation: portrait)")?.matches);
-  const designWidth = portrait ? DESIGN_WIDTH_PORTRAIT : DESIGN_WIDTH_LANDSCAPE;
-  const scale = Math.min(
-    1,
-    Math.round(((portrait ? shortSide : longSide) / designWidth) * 1000) / 1000
-  );
-  const content = `width=${designWidth}, initial-scale=${scale}, minimum-scale=${scale}, maximum-scale=${scale}, user-scalable=no`;
-  const meta = document.querySelector("meta[name='viewport']");
-  if (meta && meta.getAttribute("content") !== content) {
-    meta.setAttribute("content", content);
-  }
-  // Lets CSS size touch targets in real points: calc(44 * var(--pt)).
-  document.documentElement.style.setProperty("--touch-scale", String(scale));
-  document.documentElement.style.setProperty("--pt", `${(1 / scale).toFixed(4)}px`);
-}
-
 function markTouchMode() {
-  const wasTouch = isTouchMode();
   document.documentElement.classList.add(TOUCH_CLASS);
-  if (!wasTouch) {
-    applyViewportScale();
-  }
 }
 
 function dispatchBackKey() {
@@ -368,8 +324,6 @@ export function installTouchInput() {
   );
 
   installTouchScrollBridge();
-  window.addEventListener("resize", applyViewportScale);
-  window.addEventListener("orientationchange", applyViewportScale);
   window.addEventListener("popstate", syncBackButton);
   setInterval(syncBackButton, 300);
   syncBackButton();

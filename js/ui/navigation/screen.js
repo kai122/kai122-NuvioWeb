@@ -1,3 +1,4 @@
+import { prefersTouchLayout } from "../../core/util/touchLayout.js";
 import { focusWithoutScroll } from "./focusWithoutScroll.js";
 
 export const ScreenUtils = {
@@ -78,7 +79,13 @@ export const ScreenUtils = {
       return;
     }
     first.classList.add("focused");
-    first.focus();
+    // A plain focus() scrolls the element into view. On touch screens that
+    // jumps the page away from the top before the user has touched anything.
+    if (prefersTouchLayout()) {
+      focusWithoutScroll(first);
+    } else {
+      first.focus();
+    }
   },
 
   moveFocus(container, direction, selector = ".focusable") {

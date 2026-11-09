@@ -1,10 +1,16 @@
 import * as internals from "./homeScreenContext.js";
+import { prefersTouchLayout } from "../../../core/util/touchLayout.js";
 
 export function createHomeScreenMethods16() {
   const { Router, MODERN_HOME_CONSTANTS, HOME_PERF_DEBUG, homePerfNow, logHomePerf } = internals;
 
   return {
     getModernMainAlignedScrollTarget(target, direction = null, current = null, layoutAdjustment = 0) {
+      // On touch screens the user scrolls the rows themselves; only align the
+      // camera for arrow-key moves, never for taps or programmatic focus.
+      if (!direction && prefersTouchLayout()) {
+        return null;
+      }
       const main = this.container?.querySelector(".home-modern-rows-viewport");
       if (!main || !target || !this.container?.contains(target)) {
         return null;

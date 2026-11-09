@@ -1,4 +1,5 @@
 /* eslint-disable no-unused-vars */
+import { prefersTouchLayout } from "../../../core/util/touchLayout.js";
 import { Router } from "../../navigation/routerState.js";
 
 import { ScreenUtils } from "../../navigation/screen.js";
@@ -248,9 +249,14 @@ export function renderHeroBackdropImage(display) {
 export function buildModernHomeSizingStyle(layoutPrefs = {}) {
   const baseWidthDp = Math.max(72, Number(layoutPrefs?.posterCardWidthDp ?? 126) || 126);
   const radiusDp = Math.max(0, Number(layoutPrefs?.posterCardCornerRadiusDp ?? 12));
-  const dpToPx = 2;
-  const portraitWidth = Math.round(baseWidthDp * 0.84 * 1.08 * dpToPx);
-  const portraitHeight = Math.round(baseWidthDp * 1.5 * 0.84 * 1.08 * dpToPx);
+  // TV: 1dp = 2px on the 1920px canvas, with the Android TV size factors.
+  // Touch tablets: a CSS px is already a point, so use the dp value as-is,
+  // which matches the native mobile app's 126dp posters.
+  const touch = prefersTouchLayout();
+  const dpToPx = touch ? 1 : 2;
+  const tvPortraitFactor = touch ? 1 : 0.84 * 1.08;
+  const portraitWidth = Math.round(baseWidthDp * tvPortraitFactor * dpToPx);
+  const portraitHeight = Math.round(baseWidthDp * 1.5 * tvPortraitFactor * dpToPx);
   const portraitExpandedWidth = Math.round(portraitHeight * (16 / 9));
   const landscapeWidth = Math.round(baseWidthDp * 1.24 * 1.34 * dpToPx);
   const landscapeHeight = Math.round(landscapeWidth / 1.77);

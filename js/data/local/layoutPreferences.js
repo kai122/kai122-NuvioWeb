@@ -1,21 +1,12 @@
 import { createProfileScopedStore } from "./profileScopedStore.js";
 import { LocalStore } from "../../core/storage/localStore.js";
+import { prefersTouchLayout } from "../../core/util/touchLayout.js";
 import {
   normalizeDetailImdbRatingsVisibility,
   normalizeHomeImdbRatingsVisibility
 } from "../../core/util/imdbRatingVisibility.js";
 
 const KEY = "layoutPreferences";
-
-// Touch screens have no "focused card", so the TV behavior of expanding the
-// first poster into a wide backdrop just looks odd there.
-function prefersTouchLayout() {
-  try {
-    return Boolean(globalThis.matchMedia?.("(pointer: coarse)")?.matches);
-  } catch (_) {
-    return false;
-  }
-}
 
 const DEFAULTS = {
   customPosterUrlPattern: "",
@@ -42,6 +33,7 @@ const DEFAULTS = {
   alwaysShowLandscapeClearlogo: false,
   modernHeroFullScreenBackdropEnabled: false,
   classicFocusGradientEnabled: false,
+  // Touch screens have no focused card, so do not expand the first poster.
   focusedPosterBackdropExpandEnabled: !prefersTouchLayout(),
   focusedPosterBackdropExpandDelaySeconds: 3,
   focusedPosterBackdropTrailerEnabled: false,

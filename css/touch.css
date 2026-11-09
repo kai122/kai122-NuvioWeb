@@ -41,26 +41,29 @@ html.touch-input #playerUiRoot .player-progress-shell::before {
   left: 0;
 }
 
-/* Tablet navigation: turn the TV side rail into a floating bottom bar. */
+/* Tablet navigation: the TV side rail becomes the native app's floating
+   glass tab bar (~637x49pt, 29pt above the bottom edge). */
 html.touch-input .home-sidebar.root-sidebar {
   position: fixed !important;
   top: auto !important;
   right: auto !important;
-  bottom: calc(18 * var(--pt, 1px)) !important;
+  bottom: 29px !important;
   left: 50% !important;
   z-index: 60;
   width: auto !important;
+  min-width: 600px;
   height: auto !important;
   flex-basis: auto !important;
-  padding: calc(5 * var(--pt, 1px)) !important;
+  padding: 3px !important;
   flex-direction: row !important;
   align-items: center !important;
   overflow: visible !important;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  background: rgba(24, 24, 24, 0.94) !important;
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
+  background: rgba(40, 40, 40, 0.55) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   transform: translateX(-50%) !important;
   transition: none !important;
   will-change: auto !important;
@@ -71,33 +74,48 @@ html.touch-input .home-sidebar.root-sidebar .home-profile-pill {
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-list {
-  flex: none !important;
+  flex: 1 1 auto !important;
   width: auto !important;
   flex-direction: row !important;
-  gap: calc(4 * var(--pt, 1px)) !important;
+  justify-content: space-between !important;
+  gap: 0 !important;
   transform: none !important;
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-item {
+  flex: 1 1 0;
   width: auto !important;
-  height: calc(48 * var(--pt, 1px)) !important;
-  padding: 0 calc(20 * var(--pt, 1px)) !important;
-  gap: calc(8 * var(--pt, 1px)) !important;
+  min-width: 150px;
+  height: 43px !important;
+  padding: 0 18px !important;
+  gap: 8px !important;
   border-radius: 999px !important;
-  font-size: calc(16 * var(--pt, 1px)) !important;
+  color: rgba(255, 255, 255, 0.55) !important;
+  font-size: 15px !important;
+  transform: none !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-icon-wrap {
+  width: 22px !important;
+  height: 22px !important;
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-item.selected {
-  background: rgba(255, 255, 255, 0.16) !important;
+  background: rgba(255, 255, 255, 0.14) !important;
   color: #fff !important;
+  font-weight: 600;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-item.focused:not(.selected) {
+  background: transparent !important;
 }
 
 html.touch-input .home-sidebar.root-sidebar .home-nav-label {
   width: auto !important;
   opacity: 1 !important;
   transform: none !important;
-  font-size: calc(16 * var(--pt, 1px)) !important;
-  line-height: calc(22 * var(--pt, 1px)) !important;
+  font-size: 15px !important;
+  line-height: 20px !important;
 }
 
 html.touch-input .home-shell::before {
@@ -156,4 +174,233 @@ html.touch-input .settings-shell .settings-workspace {
     padding: 0 24px;
     font-size: 22px;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Home on tablets, sized from the native iPad app (1 CSS px = 1 pt).
+   Full-bleed hero (~77% of the screen), copy at its bottom-left, rows that
+   scroll up over it, 126pt posters with 10pt gaps and a 28pt margin.
+   ------------------------------------------------------------------------- */
+html.touch-input .home-screen-shell.home-layout-modern {
+  --home-content-start: 28px;
+  --home-row-gap: 22px;
+  --home-track-end: 28px;
+  --home-continue-track-end: 28px;
+  --modern-track-peek-extension: 28px;
+  --touch-hero-height: 77vh;
+  --modern-rows-viewport-height: 100%;
+  --modern-hero-media-width: 100%;
+  --modern-hero-media-height: var(--touch-hero-height);
+  --modern-hero-copy-top-safe: 0px;
+  --modern-hero-copy-bottom-gap: 0px;
+  --modern-hero-copy-right: 40px;
+  --modern-hero-copy-max-width: 62%;
+  --modern-hero-logo-max-width: 380px;
+  --modern-hero-logo-max-height: 110px;
+  --modern-hero-title-size: 40px;
+  --modern-hero-title-line-height: 48px;
+  --modern-hero-copy-gap: 10px;
+  --modern-hero-meta-size: 15px;
+  --modern-hero-secondary-size: 15px;
+  --modern-hero-description-size: 15px;
+  --modern-hero-description-line-height: 21px;
+  --modern-hero-description-max-width: 720px;
+  --home-poster-copy-height: 44px;
+  --home-continue-width: 247px;
+  --home-continue-height: 139px;
+}
+
+/* Rows start below the hero and slide up over it when scrolled. */
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-rows-scroll {
+  padding-top: calc(var(--touch-hero-height) + 14px);
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-catalogs {
+  background: linear-gradient(to bottom, transparent 0, var(--bg-color) 24px);
+  padding-bottom: 120px;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-row-title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-track {
+  --home-track-gap: 10px;
+  gap: 10px;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-poster-copy {
+  display: block;
+  padding: 8px 2px 0;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-poster-title {
+  overflow: hidden;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-poster-subtitle {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.6px;
+}
+
+/* Full-bleed hero backdrop with rounded bottom corners, like the native app. */
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-hero-media {
+  right: 0;
+  left: 0;
+  width: 100%;
+  height: var(--touch-hero-height);
+  border-radius: 0 0 24px 24px;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-hero-media::before {
+  width: 75%;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--bg-color-rgb) / 0.7) 0%,
+    rgb(var(--bg-color-rgb) / 0.35) 40%,
+    transparent 100%
+  );
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-hero-media::after {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    transparent 50%,
+    rgb(var(--bg-color-rgb) / 0.45) 75%,
+    rgb(var(--bg-color-rgb) / 0.85) 100%
+  );
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-hero-copy {
+  top: auto;
+  left: 40px;
+  bottom: calc(100vh - var(--touch-hero-height) + 34px);
+}
+
+/* No TV focus ring on posters: on touch nothing is "focused" until tapped. */
+html.touch-input .home-screen-shell .home-poster-card.focused .home-poster-frame {
+  border-color: transparent;
+  box-shadow: none;
+  background-color: transparent;
+}
+
+html.touch-input .home-screen-shell.home-layout-modern .home-modern-hero-meta-line,
+html.touch-input
+  .home-screen-shell.home-layout-modern
+  .home-modern-hero-meta-line
+  .home-modern-hero-meta-group {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Native posters fill their 126pt slot with small corners; the TV borders
+   exist only to draw the focus ring. */
+html.touch-input .home-screen-shell .home-poster-card.home-content-card {
+  border-width: 0 !important;
+}
+
+html.touch-input .home-screen-shell .home-poster-card .home-poster-frame {
+  border-width: 0 !important;
+  border-radius: 8px !important;
+}
+
+/* ---------------------------------------------------------------------------
+   "Who's watching?" sized from the native app: 42pt logo, 28pt title,
+   106pt avatars 170pt apart, 15pt names, a small pill hint below.
+   ------------------------------------------------------------------------- */
+html.touch-input .profile-main-layer {
+  justify-content: center;
+  padding: 24px;
+}
+
+html.touch-input .profile-brand-lockup {
+  margin: 0 auto 22px;
+}
+
+html.touch-input .profile-brand-lockup .member-brand-logo {
+  width: auto !important;
+  height: 42px !important;
+}
+
+html.touch-input .profile-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+html.touch-input .profile-subtitle,
+html.touch-input .profile-badge,
+html.touch-input .profile-badge-slot,
+html.touch-input .profile-primary-dot {
+  display: none;
+}
+
+html.touch-input .profile-grid,
+html.touch-input .profile-grid-compact {
+  min-height: 0;
+  margin-top: 30px;
+  gap: 40px;
+}
+
+html.touch-input .profile-card,
+html.touch-input .profile-grid-compact .profile-card {
+  width: 130px;
+  padding: 0;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html.touch-input .profile-card.focused {
+  transform: none;
+}
+
+html.touch-input .profile-avatar-ring,
+html.touch-input .profile-grid-compact .profile-avatar-ring,
+html.touch-input .profile-card.focused .profile-avatar-ring,
+html.touch-input .profile-grid-compact .profile-card.focused .profile-avatar-ring {
+  width: 108px;
+  height: 108px;
+  margin: 0 auto;
+  border-width: 3px;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.touch-input .profile-avatar,
+html.touch-input .profile-grid-compact .profile-avatar,
+html.touch-input .profile-card.focused .profile-avatar,
+html.touch-input .profile-grid-compact .profile-card.focused .profile-avatar {
+  width: 100px;
+  height: 100px;
+  font-size: 40px;
+}
+
+html.touch-input .profile-name,
+html.touch-input .profile-grid-compact .profile-name {
+  margin-top: 14px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+html.touch-input .profile-hint {
+  margin: 34px 0 0;
+  padding: 9px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  line-height: 18px;
 }
