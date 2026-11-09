@@ -56,6 +56,10 @@ jobs:
 
       - run: npm run build
 
+      # The touch-first iPad app lives in app/ and is served at /app/.
+      - name: Add the touch app
+        run: cp -r app dist/app
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3
