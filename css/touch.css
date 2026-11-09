@@ -40,3 +40,71 @@ html.touch-input #playerUiRoot .player-progress-shell::before {
   bottom: -22px;
   left: 0;
 }
+
+/* Tablet navigation: turn the TV side rail into a floating bottom bar. */
+html.touch-input .home-sidebar.root-sidebar {
+  position: fixed !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: 18px !important;
+  left: 50% !important;
+  z-index: 60;
+  width: auto !important;
+  height: auto !important;
+  flex-basis: auto !important;
+  padding: 6px !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  overflow: visible !important;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(24, 24, 24, 0.94) !important;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  transform: translateX(-50%) !important;
+  transition: none !important;
+  will-change: auto !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-profile-pill {
+  display: none !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-list {
+  flex: none !important;
+  width: auto !important;
+  flex-direction: row !important;
+  gap: 4px !important;
+  transform: none !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-item {
+  width: auto !important;
+  height: 56px !important;
+  padding: 0 24px !important;
+  gap: 10px !important;
+  border-radius: 999px !important;
+  font-size: 20px !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-item.selected {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #fff !important;
+}
+
+html.touch-input .home-sidebar.root-sidebar .home-nav-label {
+  width: auto !important;
+  opacity: 1 !important;
+  transform: none !important;
+  font-size: 20px !important;
+  line-height: 28px !important;
+}
+
+html.touch-input .home-shell::before {
+  display: none;
+}
+
+html.touch-input .home-main {
+  margin-left: 0 !important;
+  padding-bottom: 120px !important;
+}
