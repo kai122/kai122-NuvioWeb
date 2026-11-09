@@ -61,6 +61,36 @@ export const store = {
   saveAddonUrls(list) {
     write("addons", [...new Set(list)]);
   },
+  disabledAddons() {
+    return new Set(read("addonsDisabled", []));
+  },
+  setAddonEnabled(url, enabled) {
+    const set = this.disabledAddons();
+    if (enabled) set.delete(url);
+    else set.add(url);
+    write("addonsDisabled", [...set]);
+  },
+  moveAddon(url, delta) {
+    const list = this.addonUrls();
+    const from = list.indexOf(url);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= list.length) return;
+    list.splice(to, 0, list.splice(from, 1)[0]);
+    this.saveAddonUrls(list);
+  },
+  clearContinueWatching() {
+    this.saveScoped("progress", {});
+  },
+  resetDevice() {
+    try {
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith(PREFIX))
+        .forEach((key) => localStorage.removeItem(key));
+      sessionStorage.clear();
+    } catch (_) {
+      /* ignore */
+    }
+  },
 
   // Per-profile data
   scoped(key, fallback) {

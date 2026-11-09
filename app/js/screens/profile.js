@@ -1,166 +1,235 @@
-import { h, icon, fill, safeImageUrl } from "../dom.js";
+import { h, icon, safeImageUrl, fill } from "../dom.js";
 import { store } from "../store.js";
 import { navigate } from "../router.js";
-import { pageHeader } from "../components.js";
 import { avatarEl } from "../tabbar.js";
-import { loadAddons, fetchManifest, normalizeManifestUrl } from "../addons.js";
+import { loadAllAddons, fetchManifest, normalizeManifestUrl } from "../addons.js";
 import { openSheet, toast } from "../sheet.js";
+import { languageName } from "../subtitles.js";
 
-function settingsRow({ iconName, title, subtitle, onClick, trailing }) {
+const SECTIONS = [
+  { id: "you", label: "You", icon: "person" },
+  { id: "addons", label: "Add-ons", icon: "puzzle" },
+  { id: "playback", label: "Playback", icon: "play" },
+  { id: "system", label: "System", icon: "info" }
+];
+const SUB_LANG_KEY = "nuvioTouch.subtitleLanguage";
+const SUB_LANGS = [
+  "",
+  "eng",
+  "spa",
+  "fre",
+  "ger",
+  "ita",
+  "por",
+  "pob",
+  "ara",
+  "hin",
+  "tur",
+  "rus",
+  "jpn",
+  "kor",
+  "chi",
+  "dut",
+  "pol",
+  "swe"
+];
+
+// Lets Home rebuild its rows after add-ons change.
+function addonsChanged() {
+  window.dispatchEvent(new Event("nuvio:addons-changed"));
+}
+
+function card(...rows) {
+  return h("div.settings-card", {}, rows);
+}
+
+function row({ iconName, title, subtitle, onClick, trailing, danger = false }) {
   return h(
-    "button.settings-row",
-    { type: "button", onclick: onClick },
-    h("span.settings-icon", {}, icon(iconName, 22)),
+    onClick ? "button.settings-row" : "div.settings-row.is-static",
+    { type: onClick ? "button" : null, onclick: onClick, class: danger ? "is-danger" : "" },
+    iconName ? h("span.settings-icon", {}, icon(iconName, 22)) : null,
     h(
       "span.settings-copy",
       {},
       h("span.settings-title", {}, title),
       subtitle ? h("span.settings-sub", {}, subtitle) : null
     ),
-    trailing || icon("chevronRight", 22)
+    trailing === undefined ? (onClick ? icon("chevronRight", 22) : null) : trailing
   );
 }
 
-export function renderProfile() {
-  const root = h("div.screen.screen-profile");
-  return {
-    el: root,
-    onShow() {
-      const profile = store.activeProfile();
-      fill(
-        root,
-        pageHeader("Profile"),
-        h(
-          "div.profile-hero-card",
-          {},
-          avatarEl(profile, 72),
-          h(
-            "div",
-            {},
-            h("div.profile-hero-name", {}, profile?.name || ""),
-            h(
-              "div.settings-sub",
-              {},
-              `${store.library().length} saved • ${store.continueWatching().length} in progress`
-            )
-          )
-        ),
-        h(
-          "div.settings-card",
-          {},
-          settingsRow({
-            iconName: "person",
-            title: "Switch profile",
-            subtitle: "Choose who's watching",
-            onClick: () => navigate("profiles")
-          }),
-          settingsRow({
-            iconName: "puzzle",
-            title: "Add-ons",
-            subtitle: `${store.addonUrls().length} installed • catalogs and streams`,
-            onClick: () => navigate("addons")
-          })
-        ),
-        h(
-          "div.settings-card",
-          {},
-          settingsRow({
-            iconName: "info",
-            title: "About",
-            subtitle: "Nuvio Touch • everything is stored on this device",
-            onClick: () => toast("Nuvio Touch • data stays on this device")
-          }),
-          settingsRow({
-            iconName: "external",
-            title: "Open the classic web app",
-            subtitle: "The TV-style version",
-            onClick: () => (location.href = "../")
-          })
-        )
-      );
-    }
-  };
+function toggle(on, onChange, label) {
+  const el = h("button.switch", {
+    type: "button",
+    role: "switch",
+    "aria-checked": String(on),
+    "aria-label": label
+  });
+  el.classList.toggle("is-on", on);
+  el.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const next = !el.classList.contains("is-on");
+    el.classList.toggle("is-on", next);
+    el.setAttribute("aria-checked", String(next));
+    onChange(next);
+  });
+  return el;
 }
 
-export function renderAddons() {
-  const listEl = h("div.settings-card");
-  const root = h(
-    "div.screen.screen-addons",
-    {},
+function sectionYou() {
+  const profile = store.activeProfile();
+  return [
+    h("h2.settings-heading", {}, "You"),
     h(
-      "button.round-button.glass.page-back",
-      { type: "button", "aria-label": "Back", onclick: () => history.back() },
-      icon("back", 26)
-    ),
-    pageHeader(
-      "Add-ons",
+      "div.profile-hero-card",
+      {},
+      avatarEl(profile, 64),
       h(
-        "button.pill-button",
-        { type: "button", onclick: () => openAddSheet() },
-        icon("add", 20),
-        "Add"
+        "div.settings-copy",
+        {},
+        h("div.profile-hero-name", {}, profile?.name || ""),
+        h(
+          "div.settings-sub",
+          {},
+          `${store.library().length} saved • ${store.continueWatching().length} in progress`
+        )
       )
     ),
-    h(
-      "p.page-note",
-      {},
-      "Add-ons provide catalogs, details and streams. Paste the manifest URL from the add-on's install page (the same link you use in Stremio or the Nuvio app)."
-    ),
-    listEl
-  );
+    card(
+      row({
+        iconName: "person",
+        title: "Switch profile",
+        subtitle: "Choose who's watching",
+        onClick: () => navigate("profiles")
+      })
+    )
+  ];
+}
 
-  async function refresh() {
-    const addons = await loadAddons({ refresh: true });
+function sectionAddons(refreshSection) {
+  const listEl = h("div.addon-list", {}, h("div.settings-loading", {}, h("span.spinner")));
+
+  async function draw() {
+    const addons = await loadAllAddons({ refresh: true });
+    if (!addons.length) {
+      fill(
+        listEl,
+        h(
+          "div.empty-card",
+          {},
+          h("div.empty-title", {}, "No add-ons installed"),
+          h("div.empty-text", {}, "Add one to fill Home and find streams.")
+        )
+      );
+      return;
+    }
     fill(
       listEl,
-      ...addons.map((addon) => {
+      ...addons.map((addon, index) => {
         const manifest = addon.manifest;
-        const resources = (manifest?.resources || [])
-          .map((r) => (typeof r === "string" ? r : r.name))
-          .join(", ");
+        const resources = (manifest?.resources || []).map((r) =>
+          typeof r === "string" ? r : r.name
+        );
+        const catalogs = (manifest?.catalogs || []).length;
+        const logo = safeImageUrl(manifest?.logo);
+        const types = (manifest?.types || [])
+          .map((t) => t.charAt(0).toUpperCase() + t.slice(1))
+          .join(" / ");
         return h(
-          "div.settings-row.is-static",
-          {},
+          "div.addon-card",
+          { class: addon.enabled ? "" : "is-disabled" },
           h(
-            "span.settings-icon",
-            {},
-            safeImageUrl(manifest?.logo)
-              ? h("img.addon-logo", { src: safeImageUrl(manifest.logo), alt: "" })
-              : icon("puzzle", 22)
-          ),
-          h(
-            "span.settings-copy",
+            "div.addon-head",
             {},
             h(
-              "span.settings-title",
+              "span.addon-icon",
               {},
-              manifest
-                ? `${manifest.name} ${manifest.version ? `v${manifest.version}` : ""}`
-                : addon.url
+              logo ? h("img.addon-logo", { src: logo, alt: "" }) : icon("puzzle", 26)
             ),
             h(
-              "span.settings-sub",
+              "div.addon-titles",
               {},
-              manifest ? resources || manifest.description || "" : "Could not load this add-on"
+              h("div.addon-name", {}, manifest?.name || "Unavailable add-on"),
+              h(
+                "div.addon-version",
+                {},
+                manifest?.version ? `Version ${manifest.version}` : addon.url
+              )
+            ),
+            toggle(
+              addon.enabled,
+              (on) => {
+                store.setAddonEnabled(addon.url, on);
+                addonsChanged();
+                draw();
+              },
+              `Enable ${manifest?.name || "add-on"}`
             )
           ),
           h(
-            "button.icon-button",
-            {
-              type: "button",
-              "aria-label": "Remove",
-              onclick: () => {
-                if (!confirm(`Remove ${manifest?.name || "this add-on"}?`)) return;
-                store.saveAddonUrls(store.addonUrls().filter((url) => url !== addon.url));
-                refresh();
-              }
-            },
-            icon("trash", 22)
+            "div.addon-chips",
+            {},
+            h("span.addon-chip", {}, addon.enabled ? (manifest ? "Active" : "Error") : "Off"),
+            h(
+              "span.addon-chip",
+              {},
+              `${resources.length} resource${resources.length === 1 ? "" : "s"}`
+            ),
+            h("span.addon-chip", {}, `${catalogs} catalog${catalogs === 1 ? "" : "s"}`),
+            manifest?.behaviorHints?.configurable ? h("span.addon-chip", {}, "Configurable") : null
+          ),
+          manifest?.description ? h("div.addon-desc", {}, manifest.description) : null,
+          h("div.addon-meta", {}, [types, resources.join(", ")].filter(Boolean).join(" • ")),
+          h(
+            "div.addon-actions",
+            {},
+            h(
+              "button.icon-button",
+              {
+                type: "button",
+                "aria-label": "Move up",
+                disabled: index === 0,
+                onclick: () => {
+                  store.moveAddon(addon.url, -1);
+                  addonsChanged();
+                  draw();
+                }
+              },
+              icon("chevronDown", 22)
+            ),
+            h(
+              "button.icon-button",
+              {
+                type: "button",
+                "aria-label": "Move down",
+                disabled: index === addons.length - 1,
+                onclick: () => {
+                  store.moveAddon(addon.url, 1);
+                  addonsChanged();
+                  draw();
+                }
+              },
+              icon("chevronDown", 22)
+            ),
+            h(
+              "button.icon-button.is-danger",
+              {
+                type: "button",
+                "aria-label": "Remove",
+                onclick: () => {
+                  if (!confirm(`Remove ${manifest?.name || "this add-on"}?`)) return;
+                  store.saveAddonUrls(store.addonUrls().filter((url) => url !== addon.url));
+                  store.setAddonEnabled(addon.url, true);
+                  addonsChanged();
+                  draw();
+                }
+              },
+              icon("trash", 22)
+            )
           )
         );
       })
     );
-    if (!addons.length) fill(listEl, h("div.settings-row.is-static", {}, "No add-ons installed."));
   }
 
   function openAddSheet() {
@@ -175,24 +244,39 @@ export function renderAddons() {
     const submit = h("button.play-button.is-wide", { type: "button" }, h("span", {}, "Install"));
     const sheet = openSheet({
       title: "Add an add-on",
-      content: h("div.form", {}, input, error, submit)
+      content: h(
+        "div.form",
+        {},
+        h(
+          "div.form-hint",
+          {},
+          "Paste the manifest link from the add-on's configure page. It is saved only on this device."
+        ),
+        input,
+        error,
+        submit
+      )
     });
     submit.addEventListener("click", async () => {
       const url = normalizeManifestUrl(input.value);
-      if (!url) return;
-      submit.disabled = true;
-      error.textContent = "";
+      if (!url) {
+        error.textContent = "Enter a web link (https://…).";
+        return;
+      }
       if (store.addonUrls().includes(url)) {
         error.textContent = "That add-on is already installed.";
         return;
       }
+      submit.disabled = true;
+      error.textContent = "";
       try {
         const { manifest } = await fetchManifest(url);
         store.saveAddonUrls([...store.addonUrls(), url]);
         sheet.close();
         toast(`Installed ${manifest.name}`);
-        refresh();
-      } catch (e) {
+        addonsChanged();
+        draw();
+      } catch (_) {
         error.textContent = "That link didn't return an add-on manifest. Check it and try again.";
         submit.disabled = false;
       }
@@ -200,6 +284,174 @@ export function renderAddons() {
     setTimeout(() => input.focus(), 300);
   }
 
-  refresh();
-  return { el: root };
+  draw();
+  return [
+    h(
+      "div.settings-heading-row",
+      {},
+      h("h2.settings-heading", {}, "Add-ons"),
+      h("button.pill-button", { type: "button", onclick: openAddSheet }, icon("add", 20), "Add")
+    ),
+    h(
+      "p.settings-note",
+      {},
+      "Add-ons provide catalogs, details, streams and subtitles. Order matters: the first add-on that can answer is used for details."
+    ),
+    listEl
+  ];
+}
+
+function sectionPlayback() {
+  let current = "";
+  try {
+    current = JSON.parse(localStorage.getItem(SUB_LANG_KEY) || "null")?.lang || "";
+  } catch (_) {
+    current = "";
+  }
+  const label = current ? languageName(current) : "Off";
+  return [
+    h("h2.settings-heading", {}, "Playback"),
+    card(
+      row({
+        iconName: "cc",
+        title: "Preferred subtitles",
+        subtitle: "Turned on automatically when an add-on has them",
+        trailing: h("span.settings-value", {}, label),
+        onClick: () => {
+          const sheet = openSheet({
+            title: "Preferred subtitles",
+            content: h(
+              "div.option-list",
+              {},
+              SUB_LANGS.map((code) =>
+                h(
+                  "button.option",
+                  {
+                    type: "button",
+                    class: code === current ? "is-selected" : "",
+                    onclick: () => {
+                      try {
+                        if (code)
+                          localStorage.setItem(SUB_LANG_KEY, JSON.stringify({ lang: code }));
+                        else localStorage.removeItem(SUB_LANG_KEY);
+                      } catch (_) {
+                        /* ignore */
+                      }
+                      sheet.close();
+                      window.dispatchEvent(new Event("nuvio:settings-changed"));
+                    }
+                  },
+                  h("span", {}, code ? languageName(code) : "Off"),
+                  code === current ? h("span.option-check", { html: "&#10003;" }) : null
+                )
+              )
+            )
+          });
+        }
+      }),
+      row({
+        iconName: "external",
+        title: "Other players",
+        subtitle:
+          "MKV and some codecs can't play in Safari. Use the ↗ button on a stream to open VLC, Infuse or Outplayer.",
+        trailing: null
+      })
+    )
+  ];
+}
+
+function sectionSystem() {
+  return [
+    h("h2.settings-heading", {}, "System"),
+    card(
+      row({
+        iconName: "replay",
+        title: "Clear Continue Watching",
+        subtitle: "Remove saved progress for this profile",
+        onClick: () => {
+          if (!confirm("Clear Continue Watching for this profile?")) return;
+          store.clearContinueWatching();
+          toast("Continue Watching cleared");
+        }
+      }),
+      row({
+        iconName: "trash",
+        title: "Reset this device",
+        subtitle: "Delete all profiles, add-ons, library and progress stored here",
+        danger: true,
+        onClick: () => {
+          if (
+            !confirm("Delete everything Nuvio Touch stored on this device? This can't be undone.")
+          )
+            return;
+          store.resetDevice();
+          location.replace(location.pathname);
+        }
+      })
+    ),
+    card(
+      row({
+        iconName: "info",
+        title: "About",
+        subtitle: "Nuvio Touch • your data stays on this device",
+        trailing: null
+      }),
+      row({
+        iconName: "external",
+        title: "Open the classic web app",
+        subtitle: "The TV-style version",
+        onClick: () => (location.href = "../")
+      })
+    )
+  ];
+}
+
+export function renderProfile([initial] = []) {
+  let current = SECTIONS.some((s) => s.id === initial) ? initial : "you";
+  const nav = h("nav.settings-nav");
+  const content = h("div.settings-content");
+  const root = h(
+    "div.screen.screen-settings",
+    {},
+    h("div.settings-sidebar", {}, h("h1.settings-big-title", {}, "Settings"), nav),
+    content
+  );
+
+  function draw() {
+    fill(
+      nav,
+      ...SECTIONS.map((section) =>
+        h(
+          "button.settings-nav-item",
+          {
+            type: "button",
+            class: section.id === current ? "is-selected" : "",
+            onclick: () => {
+              current = section.id;
+              draw();
+              window.scrollTo(0, 0);
+            }
+          },
+          h("span.settings-nav-icon", {}, icon(section.icon, 20)),
+          h("span", {}, section.label)
+        )
+      )
+    );
+    const builders = {
+      you: sectionYou,
+      addons: () => sectionAddons(draw),
+      playback: sectionPlayback,
+      system: sectionSystem
+    };
+    fill(content, ...builders[current]());
+  }
+
+  window.addEventListener("nuvio:settings-changed", draw);
+  return {
+    el: root,
+    onShow: draw,
+    destroy() {
+      window.removeEventListener("nuvio:settings-changed", draw);
+    }
+  };
 }

@@ -1,28 +1,40 @@
-import { h, icon, fill, safeHttpUrl } from "../dom.js";
-import { fetchStreams } from "../addons.js";
+import { h, icon, img } from "../dom.js";
 import { openSheet, toast } from "../sheet.js";
-import { navigate } from "../router.js";
+import { navigate, back } from "../router.js";
+import { createStreamList } from "../streamlist.js";
 
-// The player reads this when the "play" route mounts.
-export let pendingPlayback = null;
+const PLAYBACK_KEY = "nuvioTouch.playback";
+const STREAMS_KEY = "nuvioTouch.streams";
 
-export function startPlayback(playback) {
-  pendingPlayback = playback;
+function remember(key, value) {
   try {
-    sessionStorage.setItem("nuvioTouch.playback", JSON.stringify(playback));
+    sessionStorage.setItem(key, JSON.stringify(value));
   } catch (_) {
     /* ignore */
   }
-  navigate("play");
 }
 
-export function takePlayback() {
-  if (pendingPlayback) return pendingPlayback;
+function recall(key) {
   try {
-    return JSON.parse(sessionStorage.getItem("nuvioTouch.playback") || "null");
+    return JSON.parse(sessionStorage.getItem(key) || "null");
   } catch (_) {
     return null;
   }
+}
+
+let pendingPlayback = null;
+let pendingStreams = null;
+
+// replace: true swaps the current page (the stream picker) for the player,
+// so leaving the player returns to the details page like the native app.
+export function startPlayback(playback, { replace = false } = {}) {
+  pendingPlayback = playback;
+  remember(PLAYBACK_KEY, playback);
+  navigate("play", { replace });
+}
+
+export function takePlayback() {
+  return pendingPlayback || recall(PLAYBACK_KEY);
 }
 
 export function externalPlayerLinks(url) {
@@ -43,15 +55,7 @@ export async function copyLink(url) {
   }
 }
 
-function streamLines(stream) {
-  const text = [stream.title, stream.description].filter(Boolean).join("\n");
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-}
-
-function openExternalSheet(url, title) {
+export function openExternalSheet(url, title = "Play with") {
   const sheet = openSheet({
     title,
     content: h(
@@ -73,109 +77,55 @@ function openExternalSheet(url, title) {
       )
     )
   });
+  return sheet;
 }
 
 // context: { type, metaId, videoId, name, poster, background, logo, season, episode, episodeTitle, thumbnail, year }
 export function openStreams(context) {
-  const list = h("div.stream-list");
-  const status = h("div.stream-status", {}, h("span.spinner"), "Finding streams…");
+  pendingStreams = context;
+  remember(STREAMS_KEY, context);
+  navigate("streams");
+}
+
+export function renderStreams() {
+  const context = pendingStreams || recall(STREAMS_KEY);
+  const root = h("div.screen.screen-streams");
+  if (!context) {
+    queueMicrotask(() => back());
+    return { el: root };
+  }
+  const backdrop = h("div.streams-backdrop");
+  if (context.background) {
+    const bg = img(context.background, "streams-backdrop-img", "");
+    bg.loading = "eager";
+    backdrop.append(bg);
+  }
+  const titleEl = h("div.streams-title-text", {}, context.name);
+  let brand = titleEl;
+  if (context.logo) {
+    brand = img(context.logo, "streams-logo", context.name);
+    brand.loading = "eager";
+    brand.addEventListener("error", () => brand.replaceWith(titleEl), { once: true });
+  }
   const subtitle = context.season
     ? `S${context.season} E${context.episode}${context.episodeTitle ? ` · ${context.episodeTitle}` : ""}`
-    : context.year || "";
-  const sheet = openSheet({
-    title: context.name,
-    content: h("div", {}, subtitle ? h("div.sheet-subtitle", {}, subtitle) : null, status, list)
+    : "";
+  const list = createStreamList(context, {
+    onPlay: (choice) =>
+      startPlayback({ ...context, ...choice, stream: undefined }, { replace: true }),
+    onExternal: (url) => openExternalSheet(url)
   });
-  let total = 0;
-
-  const play = (stream, addon) =>
-    startPlayback({
-      ...context,
-      url: safeHttpUrl(stream.url),
-      streamTitle: streamLines(stream)[0] || stream.name || addon.manifest.name,
-      addonName: addon.manifest.name
-    });
-
-  fetchStreams(context.type, context.videoId, ({ addon, streams }) => {
-    if (!streams.length) return;
-    total += streams.length;
-    const group = h("div.stream-group", {}, h("div.stream-group-title", {}, addon.manifest.name));
-    for (const stream of streams) {
-      const playUrl = safeHttpUrl(stream.url);
-      const externalUrl = safeHttpUrl(stream.externalUrl);
-      const playable = Boolean(playUrl);
-      const lines = streamLines(stream);
-      const row = h(
-        "div.stream-row",
-        { class: playable ? "" : "is-disabled" },
-        h(
-          "button.stream-main",
-          {
-            type: "button",
-            onclick: () => {
-              if (playable) {
-                sheet.close();
-                play(stream, addon);
-              } else if (externalUrl) {
-                window.open(externalUrl, "_blank", "noopener");
-              } else if (stream.ytId) {
-                window.open(
-                  `https://www.youtube.com/watch?v=${encodeURIComponent(stream.ytId)}`,
-                  "_blank",
-                  "noopener"
-                );
-              } else {
-                toast(
-                  stream.infoHash
-                    ? "Torrent streams can't play in a browser. Use a debrid add-on."
-                    : "This stream has no playable link."
-                );
-              }
-            }
-          },
-          h("span.stream-name", {}, (stream.name || addon.manifest.name).replace(/\n/g, " ")),
-          lines.map((line) => h("span.stream-line", {}, line))
-        ),
-        playable
-          ? h(
-              "button.stream-more",
-              {
-                type: "button",
-                "aria-label": "Other players",
-                onclick: () => openExternalSheet(playUrl, "Play with")
-              },
-              icon("external", 20)
-            )
-          : null
-      );
-      group.append(row);
-    }
-    list.append(group);
-    status.remove();
-  }).then((addonCount) => {
-    if (total) return;
-    fill(
-      status,
-      addonCount
-        ? "No streams found for this title."
-        : h(
-            "span",
-            {},
-            "No streaming add-ons installed. ",
-            h(
-              "button.link-button",
-              {
-                type: "button",
-                onclick: () => {
-                  sheet.close();
-                  navigate("addons");
-                }
-              },
-              "Add one"
-            )
-          )
-    );
-  });
+  root.append(
+    backdrop,
+    h(
+      "button.round-button.glass.page-back",
+      { type: "button", "aria-label": "Back", onclick: () => back() },
+      icon("back", 26)
+    ),
+    h("div.streams-brand", {}, brand, subtitle ? h("div.streams-episode", {}, subtitle) : null),
+    h("aside.streams-panel.glass-panel", {}, list.el)
+  );
+  return { el: root };
 }
 
 // Continue Watching: replay the stream that was playing, from where it stopped.

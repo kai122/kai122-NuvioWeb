@@ -5,7 +5,8 @@ import { createTabBar, setActiveTab, refreshTabAvatar } from "./tabbar.js";
 import { renderHome } from "./screens/home.js";
 import { renderDiscover } from "./screens/discover.js";
 import { renderLibrary } from "./screens/library.js";
-import { renderProfile, renderAddons } from "./screens/profile.js";
+import { renderProfile } from "./screens/profile.js";
+import { renderStreams } from "./screens/streams.js";
 import { renderDetail } from "./screens/detail.js";
 import { renderPlayer } from "./screens/player.js";
 import { renderProfiles, showSplash } from "./screens/profiles.js";
@@ -46,9 +47,11 @@ function build(route) {
     case "library":
       return renderLibrary();
     case "profile":
-      return renderProfile();
+      return renderProfile(route.params);
     case "addons":
-      return renderAddons();
+      return renderProfile(["addons"]);
+    case "streams":
+      return renderStreams();
     case "detail":
       return renderDetail(route.params);
     case "play":
@@ -94,7 +97,10 @@ function show(route, direction) {
 
   const animate = document.startViewTransition && !prefersReducedMotion() && route.name !== "play";
   if (!animate) return swap();
-  const kind = route.name === "detail" || direction === "back" ? direction : "fade";
+  const kind =
+    route.name === "detail" || route.name === "streams" || direction === "back"
+      ? direction
+      : "fade";
   document.documentElement.dataset.transition =
     TAB_ROUTES.has(route.name) && direction !== "back" ? "fade" : kind;
   const transition = document.startViewTransition(swap);
@@ -102,6 +108,12 @@ function show(route, direction) {
 }
 
 onRoute(show);
+
+// Rebuild Home's rows when add-ons are added, removed, reordered or toggled.
+window.addEventListener("nuvio:addons-changed", () => {
+  homeScreen?.destroy?.();
+  homeScreen = null;
+});
 
 async function boot() {
   let firstLaunch = true;

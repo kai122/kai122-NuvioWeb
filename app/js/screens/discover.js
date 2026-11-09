@@ -27,28 +27,17 @@ export function renderDiscover([presetKey] = []) {
     autocorrect: "off",
     spellcheck: "false"
   });
-  const searchBar = h(
-    "div.search-bar.is-hidden",
-    {},
-    icon("search", 20),
-    input,
-    h("button.search-cancel", { type: "button", onclick: () => toggleSearch(false) }, "Cancel")
-  );
+  const searchBar = h("div.search-bar.is-hidden", {}, icon("search", 20), input);
+  let searching = false;
   const searchButton = h(
     "button.icon-button",
-    { type: "button", "aria-label": "Search", onclick: () => toggleSearch(true) },
+    { type: "button", "aria-label": "Search", onclick: () => toggleSearch(!searching) },
     icon("search", 26)
   );
+  const header = pageHeader("Discover", searchButton);
   const browse = h("div.discover-browse", {}, chips, source, grid, sentinel);
   const results = h("div.search-results.is-hidden");
-  const root = h(
-    "div.screen.screen-discover",
-    {},
-    pageHeader("Discover", searchButton),
-    searchBar,
-    browse,
-    results
-  );
+  const root = h("div.screen.screen-discover", {}, header, searchBar, browse, results);
 
   let catalogs = [];
   let type = "movie";
@@ -184,9 +173,13 @@ export function renderDiscover([presetKey] = []) {
   // Search
   let searchTimer = null;
   let searchGen = 0;
+  // Search mode: the native app turns the page into "Search" with an X.
   function toggleSearch(on) {
+    searching = on;
     searchBar.classList.toggle("is-hidden", !on);
-    searchButton.classList.toggle("is-hidden", on);
+    header.querySelector(".page-title").textContent = on ? "Search" : "Discover";
+    fill(searchButton, icon(on ? "close" : "search", 26));
+    searchButton.setAttribute("aria-label", on ? "Close search" : "Search");
     if (on) {
       input.focus();
     } else {

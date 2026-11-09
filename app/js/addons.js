@@ -48,10 +48,11 @@ export async function fetchManifest(manifestUrl) {
   return { url: manifestUrl, base: baseOf(manifestUrl), manifest };
 }
 
-let addonsPromise = null;
-export function loadAddons({ refresh = false } = {}) {
-  if (!addonsPromise || refresh) {
-    addonsPromise = Promise.all(
+let allAddonsPromise = null;
+// All installed add-ons in the user's order, each with { enabled }.
+export function loadAllAddons({ refresh = false } = {}) {
+  if (!allAddonsPromise || refresh) {
+    allAddonsPromise = Promise.all(
       store
         .addonUrls()
         .map((url) =>
@@ -59,7 +60,15 @@ export function loadAddons({ refresh = false } = {}) {
         )
     );
   }
-  return addonsPromise;
+  const disabled = store.disabledAddons();
+  return allAddonsPromise.then((list) =>
+    list.map((addon) => ({ ...addon, enabled: !disabled.has(addon.url) }))
+  );
+}
+
+// Enabled add-ons only: what catalogs, details, streams and subtitles use.
+export async function loadAddons({ refresh = false } = {}) {
+  return (await loadAllAddons({ refresh })).filter((addon) => addon.enabled);
 }
 
 function resourceEntry(manifest, name) {
@@ -184,6 +193,29 @@ export async function fetchStreams(type, videoId, onResult) {
     })
   );
   return addons.length;
+}
+
+// Subtitles from every add-on with a "subtitles" resource.
+export async function fetchSubtitles(type, videoId) {
+  const addons = (await loadAddons()).filter(
+    (addon) => addon.manifest && supports(addon, "subtitles", type, videoId)
+  );
+  const results = await Promise.all(
+    addons.map(async (addon) => {
+      try {
+        const data = await getJSON(
+          `${addon.base}/subtitles/${type}/${encodeURIComponent(videoId)}.json`,
+          {
+            timeout: 15000
+          }
+        );
+        return (data?.subtitles || []).map((sub) => ({ ...sub, addonName: addon.manifest.name }));
+      } catch (_) {
+        return [];
+      }
+    })
+  );
+  return results.flat();
 }
 
 const METAHUB = "https://images.metahub.space";
