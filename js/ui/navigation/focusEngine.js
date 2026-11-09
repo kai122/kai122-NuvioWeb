@@ -67,10 +67,12 @@ export const FocusEngine = {
     this.boundHandlePointerClick = this.handlePointerClick.bind(this);
     document.addEventListener("keydown", this.boundHandleKey, true);
     document.addEventListener("keyup", this.boundHandleKeyUp, true);
+    // Touch devices (iPad Safari) use the same click -> focus + activate path as
+    // the webOS Magic Remote. It is gated at runtime by usesPointerClicks().
+    document.addEventListener("click", this.boundHandlePointerClick, true);
     if (Platform.isWebOS()) {
       document.addEventListener("mousemove", this.boundHandlePointerMove, true);
       document.addEventListener("pointermove", this.boundHandlePointerMove, true);
-      document.addEventListener("click", this.boundHandlePointerClick, true);
       document.documentElement?.classList?.add("webos-pointer-remote");
       document.body?.classList?.add("webos-pointer-remote");
     }
@@ -335,8 +337,18 @@ export const FocusEngine = {
     this.focusPointerTarget(target, event);
   },
 
+  usesPointerClicks() {
+    return (
+      Platform.isWebOS() || Boolean(document.documentElement?.classList?.contains("touch-input"))
+    );
+  },
+
   handlePointerClick(event) {
-    if (!Platform.isWebOS()) {
+    if (!this.usesPointerClicks()) {
+      return;
+    }
+    // The touch Back button is not a screen control; let it handle its own tap.
+    if (event?.target?.closest?.(".touch-back-btn")) {
       return;
     }
     const target = this.getPointerFocusable(event);

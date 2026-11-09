@@ -1,0 +1,42 @@
+/* Touch-only additions for tablets. Nothing here applies without html.touch-input. */
+.touch-back-btn {
+  display: none;
+}
+
+html.touch-input .touch-back-btn {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 9000;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 50%;
+  background: rgba(20, 20, 20, 0.72);
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+html.touch-input .touch-back-btn.is-visible {
+  display: flex;
+}
+
+/* The player's controls overlay ignores pointer events so taps reach the
+   video. Re-enable the seek bar and give it a finger-sized hit area. */
+html.touch-input #playerUiRoot .player-progress-shell {
+  position: relative;
+  pointer-events: auto;
+}
+
+html.touch-input #playerUiRoot .player-progress-shell::before {
+  content: "";
+  position: absolute;
+  top: -22px;
+  right: 0;
+  bottom: -22px;
+  left: 0;
+}
