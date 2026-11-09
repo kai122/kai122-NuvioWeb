@@ -2,6 +2,7 @@ import { h, icon, safeHttpUrl, fill } from "../dom.js";
 import { back } from "../router.js";
 import { store } from "../store.js";
 import { toast } from "../sheet.js";
+import { pref } from "../prefs.js";
 import { fetchSubtitles } from "../addons.js";
 import { createStreamList } from "../streamlist.js";
 import { parseSubtitles, findCue, languageName } from "../subtitles.js";
@@ -177,11 +178,13 @@ export function renderPlayer() {
   let cues = [];
   let activeSubtitle = null;
   let nativeTrack = null;
+  // Defaults come from Settings > Media > Playback > Subtitles; the in-player
+  // panel can still override them for this device.
   const subStyle = readJSON(SUB_STYLE_KEY, {
-    size: 30,
-    color: "#ffffff",
-    background: 0,
-    bold: false
+    size: Math.round(30 * (Number(pref("subs.size", 100)) / 100)),
+    color: pref("subs.color", "#ffffff"),
+    background: Number(pref("subs.bgOpacity", 0)) / 100,
+    bold: !!pref("subs.bold", false)
   });
   let subDelay = 0;
 
@@ -833,7 +836,7 @@ export function renderPlayer() {
     } catch (_) {
       subtitles = [];
     }
-    const preferred = readJSON(SUB_LANG_KEY, { lang: "" }).lang;
+    const preferred = pref("subs.lang", "") || readJSON(SUB_LANG_KEY, { lang: "" }).lang;
     if (preferred && !activeSubtitle) {
       const match = subtitleEntries().find(
         (entry) => languageName(entry.lang) === languageName(preferred)

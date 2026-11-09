@@ -1,3 +1,4 @@
+import "./prefs.js";
 import { h, prefersReducedMotion, fill } from "./dom.js";
 import { store } from "./store.js";
 import { navigate, onRoute, parseRoute } from "./router.js";
@@ -5,7 +6,7 @@ import { createTabBar, setActiveTab, refreshTabAvatar } from "./tabbar.js";
 import { renderHome } from "./screens/home.js";
 import { renderDiscover } from "./screens/discover.js";
 import { renderLibrary } from "./screens/library.js";
-import { renderProfile } from "./screens/profile.js";
+import { renderSettings } from "./settings/screen.js";
 import { renderStreams } from "./screens/streams.js";
 import { renderDetail } from "./screens/detail.js";
 import { renderPlayer } from "./screens/player.js";
@@ -47,9 +48,9 @@ function build(route) {
     case "library":
       return renderLibrary();
     case "profile":
-      return renderProfile(route.params);
+      return renderSettings(route.params);
     case "addons":
-      return renderProfile(["addons"]);
+      return renderSettings(["addons"]);
     case "streams":
       return renderStreams();
     case "detail":
@@ -108,6 +109,15 @@ function show(route, direction) {
 }
 
 onRoute(show);
+
+// Rebuild Home when its layout settings change.
+window.addEventListener("nuvio:pref", (event) => {
+  const key = String(event.detail?.key || "");
+  if (key === "*" || key.startsWith("home.") || key.startsWith("cw.")) {
+    homeScreen?.destroy?.();
+    homeScreen = null;
+  }
+});
 
 // Rebuild Home's rows when add-ons are added, removed, reordered or toggled.
 window.addEventListener("nuvio:addons-changed", () => {

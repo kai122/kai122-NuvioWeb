@@ -4,6 +4,7 @@ import { store } from "../store.js";
 import { navigate } from "../router.js";
 import { posterCard, rowSection, skeletonPosters, cwCard, openDetail } from "../components.js";
 import { resumeEntry } from "./streams.js";
+import { pref } from "../prefs.js";
 
 const HERO_COUNT = 8;
 const HERO_INTERVAL_MS = 8000;
@@ -136,6 +137,7 @@ function heroSkeleton() {
 }
 
 function continueWatchingRow() {
+  if (!pref("cw.show", true)) return null;
   const entries = store.continueWatching();
   if (!entries.length) return null;
   const { section, track } = rowSection("Continue Watching", { className: "row-cw" });
@@ -165,8 +167,17 @@ export function renderHome() {
         )
       : null;
 
+  const showHero = !!pref("home.showHero", true);
+  const hiddenCatalogs = new Set(pref("home.hiddenCatalogs", []));
+  const heroCatalogs = pref("home.heroCatalogs", null);
+  const hideUnreleased = !!pref("home.hideUnreleased", false);
+  const showType = !!pref("home.catalogType", true);
+  const thisYear = new Date().getFullYear();
+  if (!showHero) fill(heroSlot);
+
   listCatalogs()
-    .then((catalogs) => {
+    .then((all) => {
+      const catalogs = all.filter((entry) => !hiddenCatalogs.has(entry.key));
       if (!catalogs.length) {
         fill(heroSlot);
         rows.append(
@@ -186,7 +197,8 @@ export function renderHome() {
         return;
       }
       catalogs.forEach((entry, i) => {
-        const title = `${entry.catalog.name || entry.addon.manifest.name} - ${typeLabel(entry.catalog.type)}`;
+        const base = entry.catalog.name || entry.addon.manifest.name;
+        const title = showType ? `${base} - ${typeLabel(entry.catalog.type)}` : base;
         const { section, track } = rowSection(title, {
           onMore: () => navigate(`search/${encodeURIComponent(entry.key)}`)
         });
@@ -194,13 +206,17 @@ export function renderHome() {
         rows.append(section);
         const load = () =>
           fetchCatalog(entry)
-            .then((items) => {
+            .then((fetched) => {
+              const items = hideUnreleased
+                ? fetched.filter((item) => !(Number.parseInt(item.year || item.releaseInfo, 10) > thisYear))
+                : fetched;
               if (!items.length) {
                 section.remove();
                 return;
               }
               fill(track, ...items.slice(0, 30).map((item) => posterCard(item)));
-              if (!hero) {
+              const heroAllowed = showHero && (!heroCatalogs || heroCatalogs.includes(entry.key));
+              if (!hero && heroAllowed) {
                 const heroItems = items.filter((item) => item.background).slice(0, HERO_COUNT);
                 if (heroItems.length) {
                   hero = buildHero(heroItems);

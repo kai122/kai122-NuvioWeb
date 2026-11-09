@@ -2,6 +2,7 @@
 // Used by the stream picker page and the player's Sources panel.
 import { h, icon, safeHttpUrl, fill } from "./dom.js";
 import { fetchStreams } from "./addons.js";
+import { pref } from "./prefs.js";
 import { navigate } from "./router.js";
 import { toast } from "./sheet.js";
 
@@ -91,6 +92,14 @@ export function createStreamList(context, { onPlay, onExternal, currentUrl = "" 
             }
           }
         },
+        pref("streams.addonLogo", false) && safeHttpUrl(addon.manifest.logo)
+          ? h(
+              "span.stream-addon",
+              {},
+              h("img.stream-addon-logo", { src: safeHttpUrl(addon.manifest.logo), alt: "", loading: "lazy" }),
+              addon.manifest.name
+            )
+          : null,
         name.split("\n").map((part) => h("span.stream-name", {}, part)),
         lines.map((line) => h("span.stream-line", {}, line))
       ),

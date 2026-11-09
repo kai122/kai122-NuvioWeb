@@ -1,0 +1,109 @@
+/* Design tokens copied from the official NuvioMedia/NuvioMobile source
+   (composeApp/.../core/ui/Tokens.kt, ThemeColors.kt, Theme.kt), GPL-3.0.
+   dp and sp map to CSS px (1 dp = 1 pt on iPad). */
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("fonts/jetbrains_sans_regular.ttf") format("truetype");
+  font-weight: 400 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("fonts/jetbrains_sans_semibold.ttf") format("truetype");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Sans";
+  src: url("fonts/jetbrains_sans_bold.ttf") format("truetype");
+  font-weight: 700 900;
+  font-display: swap;
+}
+
+:root {
+  /* Space */
+  --s-hairline: 0.5px; --s1: 1px; --s2: 2px; --s3: 3px; --s4: 4px; --s5: 5px; --s6: 6px; --s7: 7px;
+  --s8: 8px; --s10: 10px; --s12: 12px; --s14: 14px; --s16: 16px; --s18: 18px; --s20: 20px;
+  --s22: 22px; --s24: 24px; --s28: 28px; --s32: 32px; --s36: 36px; --s40: 40px; --s48: 48px;
+  --s56: 56px; --s64: 64px; --s72: 72px; --s80: 80px; --s96: 96px;
+
+  /* Radius */
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; --r-xxl: 24px; --r-full: 999px;
+  --r-card: 24px; --r-compact-card: 12px; --r-sheet: 24px; --r-dialog: 28px; --r-button: 16px;
+  --r-chip: 999px; --r-poster: 12px; --r-player-panel: 24px;
+
+  /* Border / elevation */
+  --b-hairline: 0.5px; --b-thin: 1px; --b-medium: 2px;
+  --e-raised: 2px; --e-modal: 8px; --e-overlay: 12px; --e-player: 4px;
+
+  /* Opacity */
+  --o-disabled: 0.38; --o-secondary: 0.7; --o-muted: 0.6; --o-selected: 0.15; --o-hover: 0.08;
+  --o-pressed: 0.12; --o-subtle: 0.06; --o-medium: 0.52; --o-strong: 0.75; --o-overlay-light: 0.35;
+  --o-overlay-medium: 0.56; --o-overlay-heavy: 0.82;
+
+  /* Motion */
+  --d-instant: 0ms; --d-fast: 150ms; --d-normal: 220ms; --d-sheet-enter: 300ms;
+  --d-sheet-exit: 250ms; --d-slow: 400ms; --d-cinematic: 700ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --ease-accelerate: cubic-bezier(0.3, 0, 1, 1);
+
+  /* Icon sizes */
+  --i-xs: 12px; --i-sm: 16px; --i-md: 20px; --i-lg: 24px; --i-xl: 32px; --i-xxl: 40px;
+
+  /* Type: size / line-height */
+  --t-label-xs: 11px; --lh-label-xs: 14px;
+  --t-label-sm: 12px; --lh-label-sm: 15px;
+  --t-body-sm: 13px; --lh-body-sm: 18px;
+  --t-body-md: 14px; --lh-body-md: 20px;
+  --t-body-app: 15px; --lh-body-app: 22px;
+  --t-body-lg: 16px; --lh-body-lg: 22px;
+  --t-title-sm: 18px; --lh-title-sm: 22px;
+  --t-title-md: 22px; --lh-title-md: 26px;
+  --t-headline: 26px; --lh-headline: 30px;
+  --t-title-lg: 28px; --lh-title-lg: 32px;
+  --t-display-sm: 32px; --lh-display-sm: 36px;
+  --t-page-display: 38px; --lh-page-display: 42px;
+  --t-display-md: 48px; --lh-display-md: 52px;
+  --ls-page-display: -1.2px; --ls-headline: -0.8px; --ls-label: 0.8px;
+
+  /* Layout */
+  --screen-h: 16px; --screen-top: 10px; --screen-bottom: 18px; --section-gap: 24px;
+  --list-gap: 12px; --rail-gap: 14px; --card-pad: 18px; --card-pad-compact: 14px;
+  --control-gap: 8px; --dialog-pad: 20px; --sheet-pad: 20px; --player-pad: 24px;
+  --sheet-max: 520px; --dialog-max: 460px; --player-panel-max: 600px; --avatar: 48px;
+  --nav-icon: 32px;
+
+  /* Z */
+  --z-sticky: 2; --z-nav: 4; --z-sheet: 8; --z-dialog: 10; --z-player: 12; --z-toast: 16;
+
+  /* Colour: default "White" theme */
+  --bg: #0d0d0d;
+  --surface: #1a1a1a;
+  --surface-card: #222222;
+  --text: #f5f7f8;
+  --text-2: #b8bec5;
+  --text-3: #969ca3;
+  --accent: #f5f5f5;
+  --accent-strong: #e0e0e0;
+  --on-accent: #111111;
+  --focus-bg: #303030;
+  --border-subtle: rgba(37, 42, 42, 0.55);
+  --border: #252a2a;
+  --border-strong: #3a4040;
+  --success: #66bb6a; --warning: #ffc857; --danger: #e36a8a; --info: #42a5f5;
+  --scrim: rgba(0, 0, 0, 0.56);
+  --ov-hover: rgba(255, 255, 255, 0.08);
+  --ov-pressed: rgba(255, 255, 255, 0.12);
+  --ov-selected: rgba(255, 255, 255, 0.15);
+  --shimmer: rgba(255, 255, 255, 0.1);
+  --skeleton: rgba(255, 255, 255, 0.06);
+  --player-controls-bg: rgba(0, 0, 0, 0.72);
+  --player-track: rgba(255, 255, 255, 0.3);
+  --player-sub-preview: rgba(0, 0, 0, 0.55);
+  --parental: #5d1f1f;
+
+  --font: "JetBrains Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+}

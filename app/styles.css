@@ -1,26 +1,19 @@
 /* Nuvio Touch. Sizes are in CSS px = iOS points, measured from the native
    iPad app (1180x820pt landscape). */
 :root {
-  --bg: #111111;
-  --surface: #1b1b1d;
-  --surface-2: #232326;
-  --text: #f3f5f7;
-  --text-2: #aab2be;
-  --text-3: #687381;
+  /* Exact values live in tokens.css (from the official source). These are
+     short aliases used throughout this file. */
+  --surface-2: var(--surface-card);
   --hairline: rgba(255, 255, 255, 0.1);
-  --accent: #3185f5;
   --imdb: #f5c518;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
-  --ease-out: cubic-bezier(0, 0, 0, 1);
-  --fast: 150ms;
-  --normal: 220ms;
-  --sheet-enter: 300ms;
+  --ease: var(--ease-standard);
+  --ease-out: var(--ease-decelerate);
+  --fast: var(--d-fast);
+  --normal: var(--d-normal);
+  --sheet-enter: var(--d-sheet-enter);
   --margin: 28px;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --font:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, sans-serif;
   color-scheme: dark;
 }
 
@@ -547,16 +540,16 @@ img.is-broken {
 
 .poster-card {
   flex: none;
-  width: 126px;
+  width: var(--poster-w, 126px);
   text-align: left;
 }
 
 .poster-frame {
   position: relative;
   width: 100%;
-  aspect-ratio: 126 / 186;
+  aspect-ratio: 2 / 3;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--poster-r, 8px);
   background: #1f1f22;
 }
 
@@ -2899,4 +2892,251 @@ html[data-transition="back"]::view-transition-new(root) {
   .player-center {
     gap: 40px;
   }
+}
+
+/* --- Settings pages (generated from the official app's structure) ------------ */
+.settings-sidebar {
+  width: 280px;
+}
+.screen-settings {
+  grid-template-columns: 280px minmax(0, 1fr);
+}
+.set-section-label {
+  margin: 22px 0 8px 20px;
+  color: var(--text-3);
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+}
+.settings-content .settings-card,
+.settings-content .profile-hero-card {
+  border-radius: 20px;
+  background: var(--surface-card);
+}
+.settings-row {
+  min-height: 58px;
+  padding: 14px 18px;
+}
+.settings-title {
+  font-size: var(--t-body-app);
+  font-weight: 500;
+  line-height: var(--lh-body-app);
+}
+.settings-sub.is-wrap {
+  overflow: visible;
+  white-space: normal;
+  font-size: var(--t-body-sm);
+  line-height: var(--lh-body-sm);
+  color: var(--text-3);
+}
+.settings-soon {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: var(--t-label-xs);
+  opacity: 0.7;
+}
+.settings-value {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: var(--t-body-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.set-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--ov-pressed);
+}
+.settings-heading-row {
+  justify-content: flex-start;
+  margin-bottom: 8px;
+}
+.settings-heading {
+  font-size: var(--t-title-lg);
+  line-height: var(--lh-title-lg);
+  letter-spacing: var(--ls-headline);
+}
+.settings-big-title {
+  font-size: var(--t-page-display);
+  line-height: var(--lh-page-display);
+  letter-spacing: var(--ls-page-display);
+}
+.settings-nav-item.is-selected {
+  background: var(--ov-selected);
+}
+.settings-row.is-slider {
+  gap: 16px;
+}
+.set-slider {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  accent-color: var(--accent);
+}
+.set-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.set-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-card);
+  text-align: left;
+}
+.set-tile.is-selected {
+  border-color: var(--accent);
+  background: var(--focus-bg);
+}
+.set-tile-title {
+  font-weight: 700;
+}
+.set-tile-sub {
+  color: var(--text-3);
+  font-size: var(--t-body-sm);
+}
+.set-themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.set-theme {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--surface-card);
+  font-size: var(--t-body-md);
+}
+.set-theme.is-selected {
+  border-color: var(--text);
+  background: var(--ov-selected);
+}
+.set-theme-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+}
+.set-poster-preview {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 20px;
+  border-radius: 20px;
+  background: var(--surface-card);
+}
+.set-poster-card {
+  flex: none;
+  background: linear-gradient(160deg, #3a3a44, #1c1c22);
+}
+.set-poster-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--t-body-md);
+}
+.set-sub-preview {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 120px;
+  margin-bottom: 16px;
+  padding-bottom: 18px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #3b3b46, #15151a);
+}
+.set-provider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  text-align: left;
+}
+.set-provider-name {
+  font-size: var(--t-title-md);
+  font-weight: 800;
+}
+.set-provider-sub {
+  flex: 1;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--t-body-sm);
+}
+.set-provider.is-trakt {
+  background: linear-gradient(90deg, #8c1fba, #e0245e 70%, #f0443e);
+}
+.set-provider.is-simkl {
+  background: #141414;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.set-provider.is-mdblist {
+  background: linear-gradient(90deg, #14305f, #2a62c9);
+}
+.set-provider.is-anilist {
+  background: linear-gradient(90deg, #101b33, #1b2f55);
+}
+.set-about,
+.set-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 28px;
+  font-size: var(--t-body-sm);
+}
+.set-about-logo {
+  width: 110px;
+  height: auto;
+}
+.play-button.is-danger {
+  background: var(--danger);
+  color: #1a0a0f;
+}
+/* Display preferences */
+.hide-poster-labels .poster-title,
+.hide-poster-labels .poster-year {
+  display: none;
+}
+.no-glass .tabbar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: rgba(30, 30, 32, 0.96);
+}
+.stream-addon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+}
+.stream-addon-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+a.settings-row {
+  color: inherit;
+  text-decoration: none;
 }
