@@ -1545,6 +1545,13 @@ export const PAGES = {
         def: false
       },
       {
+        t: "toggle",
+        pref: "subs.builtin",
+        title: "Built-in OpenSubtitles",
+        sub: "Find subtitles on OpenSubtitles when none of your add-ons provide them.",
+        def: true
+      },
+      {
         t: "subPreview"
       },
       {

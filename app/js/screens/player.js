@@ -7,7 +7,13 @@ import { fetchSubtitles, fetchMeta, preloadStreams, fetchStreams } from "../addo
 import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { createStreamList, playability, choiceFor } from "../streamlist.js";
-import { parseSubtitles, findCue, languageName, stripSdh } from "../subtitles.js";
+import {
+  findCue,
+  languageName,
+  stripSdh,
+  parseAnySubtitles,
+  decodeSubtitleBytes
+} from "../subtitles.js";
 import {
   takePlayback,
   externalPlayerLinks,
@@ -685,6 +691,18 @@ export function renderPlayer() {
   }
 
   // --- Subtitles ------------------------------------------------------------------
+  // Subtitles follow the picture frame by frame (timeupdate only fires about
+  // four times a second, which made lines appear late).
+  let subFrame = 0;
+  function subtitleLoop() {
+    cancelAnimationFrame(subFrame);
+    const tick = () => {
+      renderSubtitle();
+      if (!video.paused && activeSubtitle) subFrame = requestAnimationFrame(tick);
+    };
+    subFrame = requestAnimationFrame(tick);
+  }
+
   function renderSubtitle() {
     let text = "";
     if (activeSubtitle?.kind === "addon") {
@@ -708,6 +726,26 @@ export function renderPlayer() {
     );
   }
 
+  // Downloads and parses one add-on subtitle file (SRT, VTT, ASS/SSA, any
+  // encoding, gzip). Returns cues, or null when it can't be used.
+  async function loadAddonCues(entry) {
+    try {
+      const url = safeHttpUrl(entry.url);
+      if (!url) return null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const response = await fetch(url, { signal: controller.signal }).finally(() =>
+        clearTimeout(timer)
+      );
+      if (!response.ok) return null;
+      const text = await decodeSubtitleBytes(await response.arrayBuffer(), entry.lang);
+      const parsed = parseAnySubtitles(text);
+      return parsed.length ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   async function selectSubtitle(entry) {
     if (nativeTrack) nativeTrack.mode = "disabled";
     nativeTrack = null;
@@ -725,19 +763,37 @@ export function renderPlayer() {
       nativeTrack.mode = "hidden";
       nativeTrack.oncuechange = renderSubtitle;
     } else {
-      try {
-        const url = safeHttpUrl(entry.url);
-        if (!url) throw new Error("bad url");
-        const response = await fetch(url);
-        cues = parseSubtitles(await response.text());
-        if (!cues.length) throw new Error("empty");
-      } catch (_) {
-        toast("Could not load those subtitles");
-        activeSubtitle = null;
+      const loaded = await loadAddonCues(entry);
+      if (activeSubtitle !== entry) return; // another choice was made meanwhile
+      if (loaded) cues = loaded;
+      else {
+        // That file failed: quietly try the other ones in the same language.
+        const others = subtitleEntries().filter(
+          (e) =>
+            e.kind === "addon" &&
+            e.id !== entry.id &&
+            languageName(e.lang) === languageName(entry.lang)
+        );
+        let fallback = null;
+        for (const other of others.slice(0, 4)) {
+          const c = await loadAddonCues(other);
+          if (activeSubtitle !== entry) return;
+          if (c) {
+            fallback = other;
+            cues = c;
+            break;
+          }
+        }
+        if (fallback) activeSubtitle = fallback;
+        else {
+          toast("Could not load those subtitles");
+          activeSubtitle = null;
+        }
       }
     }
     renderSubtitle();
     renderToolbar();
+    if (activeSubtitle) subtitleLoop();
   }
 
   function subtitleEntries() {
@@ -1230,6 +1286,7 @@ export function renderPlayer() {
   video.addEventListener("progress", syncTime);
   video.addEventListener("play", () => {
     syncPlayState();
+    subtitleLoop();
     schedulePauseOverlay();
     wake();
   });
@@ -1374,6 +1431,7 @@ export function renderPlayer() {
       clearTimeout(hideTimer);
       clearTimeout(pauseTimer);
       clearInterval(nextTimer);
+      cancelAnimationFrame(subFrame);
       window.removeEventListener("nuvio:pref", onPrefChange);
       try {
         localStorage.removeItem(LAST_PLAYER_KEY);

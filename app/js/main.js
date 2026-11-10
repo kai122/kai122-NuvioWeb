@@ -102,6 +102,10 @@ function show(route, direction) {
   };
   current = { key, screen };
 
+  // A new screen while the last animation is still running: finish that one
+  // at once instead of letting the browser cancel it mid-way (which flickers).
+  activeTransition?.skipTransition?.();
+  activeTransition = null;
   const animate = document.startViewTransition && !prefersReducedMotion() && route.name !== "play";
   if (!animate) return swap();
   const kind =
@@ -111,8 +115,17 @@ function show(route, direction) {
   document.documentElement.dataset.transition =
     TAB_ROUTES.has(route.name) && direction !== "back" ? "fade" : kind;
   const transition = document.startViewTransition(swap);
-  transition.finished.finally(() => delete document.documentElement.dataset.transition);
+  activeTransition = transition;
+  transition.ready.catch(() => {});
+  transition.updateCallbackDone.catch(() => {});
+  transition.finished
+    .catch(() => {})
+    .finally(() => {
+      if (activeTransition === transition) activeTransition = null;
+      delete document.documentElement.dataset.transition;
+    });
 }
+let activeTransition = null;
 
 onRoute(show);
 

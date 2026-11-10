@@ -1,5 +1,6 @@
 // Stremio add-on protocol client: manifests, catalogs, metadata and streams.
 import { store } from "./store.js";
+import { pref } from "./prefs.js";
 
 const responseCache = new Map();
 
@@ -229,11 +230,32 @@ async function fetchStreamsLive(type, videoId, onResult) {
   return addons.length;
 }
 
+// Used when none of the installed add-ons provide subtitles (can be turned
+// off in Settings > Playback > Subtitles).
+const BUILTIN_SUBTITLES = {
+  url: "https://opensubtitles-v3.strem.io/manifest.json",
+  base: "https://opensubtitles-v3.strem.io",
+  manifest: {
+    id: "org.stremio.opensubtitlesv3",
+    name: "OpenSubtitles",
+    resources: ["subtitles"],
+    types: ["movie", "series"],
+    idPrefixes: ["tt"]
+  }
+};
+
 // Subtitles from every add-on with a "subtitles" resource.
 export async function fetchSubtitles(type, videoId) {
-  const addons = (await loadAddons()).filter(
+  let addons = (await loadAddons()).filter(
     (addon) => addon.manifest && supports(addon, "subtitles", type, videoId)
   );
+  if (
+    !addons.length &&
+    pref("subs.builtin", true) &&
+    supports(BUILTIN_SUBTITLES, "subtitles", type, videoId)
+  ) {
+    addons = [BUILTIN_SUBTITLES];
+  }
   const results = await Promise.all(
     addons.map(async (addon) => {
       try {
