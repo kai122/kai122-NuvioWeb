@@ -5,6 +5,7 @@ import { navigate } from "../router.js";
 import { posterCard, rowSection, skeletonPosters, cwCard, openDetail } from "../components.js";
 import { resumeEntry, openStreams } from "./streams.js";
 import { pref } from "../prefs.js";
+import { collectionSections } from "./collections.js";
 import { fetchRatings } from "../services/mdblist.js";
 
 const HERO_COUNT = 8;
@@ -229,7 +230,10 @@ export function renderHome() {
   const heroSlot = h("div.hero-slot", {}, heroSkeleton());
   const cwSlot = h("div");
   const rows = h("div.rows");
-  root.append(heroSlot, cwSlot, rows);
+  // Collections: pinned ones above the catalog rows, the rest below.
+  const pinnedCollections = h("div.collection-rows", {}, collectionSections({ pinned: true }));
+  const otherCollections = h("div.collection-rows", {}, collectionSections({ pinned: false }));
+  root.append(heroSlot, cwSlot, pinnedCollections, rows, otherCollections);
   let hero = null;
 
   const observer =

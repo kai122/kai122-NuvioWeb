@@ -253,3 +253,147 @@ export async function seasonDetails(tmdbId, season) {
   }
   return map;
 }
+
+// --- Collections (Nuvio's collection sources) ------------------------------------
+// Source: { tmdbSourceType: DISCOVER|NETWORK|COMPANY|COLLECTION|DIRECTOR|PERSON|LIST,
+//           tmdbId, mediaType: MOVIE|TV, sortBy, filters }
+// Returns { items: [{ tmdbId, type, name, poster, background, year, rating }], hasMore }.
+function setParam(params, key, value) {
+  if (value !== undefined && value !== null && value !== "") params[key] = String(value);
+}
+
+function discoverFilters(params, filters = {}, isTv) {
+  setParam(params, "with_genres", filters.withGenres);
+  setParam(params, "without_genres", filters.withoutGenres);
+  setParam(
+    params,
+    isTv ? "first_air_date.gte" : "primary_release_date.gte",
+    filters.releaseDateGte
+  );
+  setParam(
+    params,
+    isTv ? "first_air_date.lte" : "primary_release_date.lte",
+    filters.releaseDateLte
+  );
+  setParam(params, "vote_average.gte", filters.voteAverageGte);
+  setParam(params, "vote_average.lte", filters.voteAverageLte);
+  setParam(params, "vote_count.gte", filters.voteCountGte);
+  setParam(params, "with_original_language", filters.withOriginalLanguage);
+  setParam(params, "with_origin_country", filters.withOriginCountry);
+  setParam(params, "with_keywords", filters.withKeywords);
+  setParam(params, "without_keywords", filters.withoutKeywords);
+  setParam(params, "with_companies", filters.withCompanies);
+  setParam(params, "without_companies", filters.withoutCompanies);
+  if (isTv) setParam(params, "with_networks", filters.withNetworks);
+  if (Number(filters.year) > 0)
+    params[isTv ? "first_air_date_year" : "year"] = String(Math.trunc(Number(filters.year)));
+  if (filters.withWatchProviders || filters.withoutWatchProviders)
+    setParam(params, "watch_region", filters.watchRegion || "US");
+  if (filters.withWatchProviders) {
+    setParam(params, "with_watch_providers", filters.withWatchProviders);
+    params.with_watch_monetization_types = "flatrate|free|ads|rent|buy";
+  }
+  setParam(params, "without_watch_providers", filters.withoutWatchProviders);
+}
+
+function listItem(item, mediaType) {
+  const media = item.media_type || mediaType;
+  if (!item?.id || (media !== "movie" && media !== "tv")) return null;
+  const name = item.title || item.name || item.original_title || item.original_name;
+  if (!name) return null;
+  return {
+    tmdbId: item.id,
+    type: media === "tv" ? "series" : "movie",
+    name,
+    poster: image(item.poster_path, "w342"),
+    background: image(item.backdrop_path, "w780"),
+    year: String(item.release_date || item.first_air_date || "").slice(0, 4),
+    rating: typeof item.vote_average === "number" ? item.vote_average : null,
+    votes: item.vote_count || 0,
+    popularity: item.popularity || 0
+  };
+}
+
+function sortItems(items, sortBy) {
+  const list = [...items];
+  if (sortBy === "vote_average.desc")
+    return list.sort((a, b) => (b.rating ?? -1) - (a.rating ?? -1));
+  if (sortBy === "vote_count.desc") return list.sort((a, b) => b.votes - a.votes);
+  if (sortBy === "popularity.desc") return list.sort((a, b) => b.popularity - a.popularity);
+  if (sortBy === "primary_release_date.desc" || sortBy === "first_air_date.desc")
+    return list.sort((a, b) => String(b.year).localeCompare(String(a.year)));
+  return list;
+}
+
+export async function tmdbSourceItems(source = {}, page = 1) {
+  if (!tmdbAvailable()) throw new Error("TMDB key needed");
+  const lang = language();
+  const type = String(source.tmdbSourceType || "DISCOVER").toUpperCase();
+  const mediaType =
+    type === "NETWORK" || String(source.mediaType || "MOVIE").toUpperCase() === "TV"
+      ? "tv"
+      : "movie";
+  const isTv = mediaType === "tv";
+  const dedupe = (items) => {
+    const seen = new Set();
+    return items.filter(
+      (i) => i && !seen.has(`${i.type}:${i.tmdbId}`) && seen.add(`${i.type}:${i.tmdbId}`)
+    );
+  };
+  if (type === "COLLECTION") {
+    if (page > 1) return { items: [], hasMore: false };
+    const data = await get(`/collection/${source.tmdbId}`, { language: lang });
+    const parts = (data.parts || []).sort((a, b) =>
+      String(a.release_date || "9999").localeCompare(String(b.release_date || "9999"))
+    );
+    return {
+      items: sortItems(dedupe(parts.map((p) => listItem(p, "movie"))), source.sortBy),
+      hasMore: false
+    };
+  }
+  if (type === "LIST") {
+    const data = await get(`/list/${source.tmdbId}`, { language: lang, page });
+    return {
+      items: sortItems(
+        dedupe((data.items || []).map((i) => listItem(i, mediaType))),
+        source.sortBy
+      ),
+      hasMore: Number(data.page || page) < Number(data.total_pages || page)
+    };
+  }
+  if (type === "PERSON" || type === "DIRECTOR") {
+    if (page > 1) return { items: [], hasMore: false };
+    const data = await get(`/person/${source.tmdbId}/combined_credits`, { language: lang });
+    const entries =
+      type === "DIRECTOR"
+        ? (data.crew || []).filter((c) => String(c.job).toLowerCase() === "director")
+        : data.cast || [];
+    return {
+      items: sortItems(dedupe(entries.map((i) => listItem(i, mediaType))), source.sortBy),
+      hasMore: false
+    };
+  }
+  const params = {
+    language: lang,
+    page,
+    sort_by:
+      source.sortBy && source.sortBy !== "original"
+        ? source.sortBy
+        : isTv
+          ? "first_air_date.desc"
+          : "popularity.desc"
+  };
+  const filters = source.filters && typeof source.filters === "object" ? source.filters : {};
+  discoverFilters(params, filters, isTv);
+  if (type === "COMPANY" && source.tmdbId) params.with_companies = String(source.tmdbId);
+  if (type === "NETWORK" && source.tmdbId) {
+    params.with_networks = String(source.tmdbId);
+    params["first_air_date.lte"] = filters.releaseDateLte || new Date().toISOString().slice(0, 10);
+    params.with_status = "0|3|4";
+  }
+  const data = await get(`/discover/${mediaType}`, params);
+  return {
+    items: dedupe((data.results || []).map((i) => listItem(i, mediaType))),
+    hasMore: Number(data.page || page) < Math.min(Number(data.total_pages || 1), 500)
+  };
+}

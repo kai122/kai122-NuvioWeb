@@ -455,8 +455,22 @@ export function renderPlayer() {
       if (finished) return;
       finished = true;
       store.removeProgress(playback.videoId);
-      store.setWatched(playback.videoId, true);
-      if (!playback.season) store.setWatched(playback.metaId, true);
+      const episodic = playback.season != null && Number(playback.episode) > 0;
+      store.setWatched(playback.videoId, true, {
+        contentId: playback.metaId,
+        type: playback.type || "movie",
+        season: episodic ? Number(playback.season) : null,
+        episode: episodic ? Number(playback.episode) : null,
+        title: playback.name || ""
+      });
+      if (!playback.season)
+        store.setWatched(playback.metaId, true, {
+          contentId: playback.metaId,
+          type: playback.type || "movie",
+          season: null,
+          episode: null,
+          title: playback.name || ""
+        });
       else updateNextUp();
       return;
     }

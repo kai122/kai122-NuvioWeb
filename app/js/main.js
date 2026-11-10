@@ -9,6 +9,7 @@ import { renderLibrary } from "./screens/library.js";
 import { renderSettings } from "./settings/screen.js";
 import { renderStreams } from "./screens/streams.js";
 import { renderDetail } from "./screens/detail.js";
+import { renderCollectionFolder } from "./screens/collections.js";
 import { renderPlayer } from "./screens/player.js";
 import { renderProfiles, showSplash } from "./screens/profiles.js";
 import { closeAllSheets, openSheet } from "./sheet.js";
@@ -60,6 +61,8 @@ function build(route) {
       return renderStreams();
     case "detail":
       return renderDetail(route.params);
+    case "collection":
+      return renderCollectionFolder(route.params);
     case "play":
       return renderPlayer();
     case "profiles":
@@ -132,13 +135,17 @@ onRoute(show);
 // Rebuild Home when its layout settings change.
 window.addEventListener("nuvio:pref", (event) => {
   const key = String(event.detail?.key || "");
-  if (key === "*" || /^(home|cw|poster|depth|tmdb|mdb)\./.test(key)) {
+  if (key === "*" || /^(home|cw|poster|depth|tmdb|mdb|collections)\./.test(key)) {
     homeScreen?.destroy?.();
     homeScreen = null;
   }
 });
 
-// Rebuild Home's rows when add-ons are added, removed, reordered or toggled.
+// Rebuild Home's rows when add-ons or collections change.
+window.addEventListener("nuvio:collections-changed", () => {
+  homeScreen?.destroy?.();
+  homeScreen = null;
+});
 window.addEventListener("nuvio:addons-changed", () => {
   homeScreen?.destroy?.();
   homeScreen = null;

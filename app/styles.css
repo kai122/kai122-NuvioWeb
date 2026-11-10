@@ -3865,3 +3865,84 @@ body[data-route="play"] {
 .screen-player.is-locked .player-skip-segment {
   display: none;
 }
+
+/* Collections: folder tiles on Home and folder pages */
+.row-collection .collection-track {
+  gap: 14px;
+}
+.collection-tile {
+  position: relative;
+  flex: none;
+  width: 248px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2a2a30, #1a1a1e);
+  text-align: left;
+  transition: transform 160ms var(--ease);
+}
+.collection-tile:active {
+  transform: scale(0.97);
+}
+.collection-tile.is-poster {
+  width: var(--poster-w, 126px);
+  aspect-ratio: 2 / 3;
+}
+.collection-tile-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.collection-tile-img.is-broken {
+  display: none;
+}
+.collection-tile-title {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 12px;
+  font-size: 17px;
+  font-weight: 800;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+.screen-folder {
+  padding-top: calc(80px + var(--safe-top, 0px));
+}
+.folder-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin: 0 var(--margin) 18px;
+}
+.folder-cover {
+  width: 220px;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  object-fit: cover;
+}
+.folder-cover.is-broken {
+  display: none;
+}
+.folder-kicker {
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.folder-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 var(--margin) 18px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.folder-tabs::-webkit-scrollbar {
+  display: none;
+}
+.folder-status {
+  margin: 0 var(--margin);
+}
+.collection-tile.hide-title .collection-tile-title {
+  display: none;
+}

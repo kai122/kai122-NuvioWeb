@@ -11,6 +11,26 @@ function read(key, fallback) {
   }
 }
 
+// Tells the sync service that a profile's data changed (it uploads Nuvio
+// account profiles' changes).
+const SYNCED_KINDS = new Set([
+  "progress",
+  "watched",
+  "library",
+  "addons",
+  "addonsDisabled",
+  "collections"
+]);
+function announce(kind, profileId) {
+  if (!SYNCED_KINDS.has(kind) || !profileId) return;
+  const k = kind === "addonsDisabled" ? "addons" : kind;
+  try {
+    window.dispatchEvent(new CustomEvent("nuvio:data", { detail: { kind: k, profileId } }));
+  } catch (_) {
+    /* ignore */
+  }
+}
+
 function write(key, value) {
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
@@ -49,7 +69,11 @@ export const store = {
       "nextUp",
       "links",
       "recentSearches",
-      "seenEpisodes"
+      "seenEpisodes",
+      "watchedInfo",
+      "addons",
+      "addonsDisabled",
+      "collections"
     ]) {
       try {
         localStorage.removeItem(`${PREFIX}${key}.${id}`);
@@ -95,6 +119,7 @@ export const store = {
   },
   saveAddonUrls(list) {
     write(this.addonKey(), [...new Set(list)]);
+    if (this.addonKey() !== "addons") announce("addons", this.activeProfileId);
   },
   disabledAddons() {
     return new Set(read(this.disabledKey(), []));
@@ -104,6 +129,7 @@ export const store = {
     if (enabled) set.delete(url);
     else set.add(url);
     write(this.disabledKey(), [...set]);
+    if (this.addonKey() !== "addons") announce("addons", this.activeProfileId);
   },
   saveProfileAddons(profileId, urls, disabled = []) {
     write(`addons.${profileId}`, [...new Set(urls)]);
@@ -156,6 +182,25 @@ export const store = {
   },
   saveScoped(key, value) {
     write(`${key}.${this.activeProfileId}`, value);
+    announce(key, this.activeProfileId);
+  },
+  readForProfile(profileId, key, fallback) {
+    return read(`${key}.${profileId}`, fallback);
+  },
+  saveForProfile(profileId, key, value) {
+    write(`${key}.${profileId}`, value);
+  },
+  watchedInfo(profileId = this.activeProfileId) {
+    return read(`watchedInfo.${profileId}`, {});
+  },
+  mergeWatchedInfo(profileId, info) {
+    write(`watchedInfo.${profileId}`, { ...this.watchedInfo(profileId), ...info });
+  },
+  collections() {
+    return read(`collections.${this.activeProfileId}`, []);
+  },
+  saveCollections(list) {
+    write(`collections.${this.activeProfileId}`, list);
   },
 
   library() {
@@ -257,10 +302,13 @@ export const store = {
   isWatched(id) {
     return this.watchedSet().has(id);
   },
-  setWatched(id, value) {
+  // info: { contentId, type, season, episode, title } so it can be uploaded.
+  setWatched(id, value, info = null) {
     const set = this.watchedSet();
     if (value) set.add(id);
     else set.delete(id);
+    if (value && info)
+      this.mergeWatchedInfo(this.activeProfileId, { [id]: { ...info, at: Date.now() } });
     this.saveScoped("watched", [...set]);
   }
 };

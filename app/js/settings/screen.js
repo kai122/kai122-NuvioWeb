@@ -9,7 +9,14 @@ import { listCatalogs } from "../addons.js";
 import { sectionAddons } from "../screens/profile.js";
 import { pref, setPref, clearPrefs, allPrefs, importPrefs } from "../prefs.js";
 import { CATEGORIES, PAGES, THEMES } from "./schema.js";
-import { account, signOut } from "../services/nuvioAccount.js";
+import {
+  account,
+  signOut,
+  pushCollections,
+  CLOUD_PREFIX,
+  syncStatus
+} from "../services/nuvioAccount.js";
+import { parseCollectionsFile } from "../screens/collections.js";
 import { openSignIn, runDownload, summaryText } from "../signin.js";
 
 const VERSION = "1.0 touch";
@@ -487,6 +494,19 @@ function customAccount(ctx) {
           onClick: () => runDownload().then(() => ctx.refresh())
         }),
         rowShell({
+          title: "Upload changes to Nuvio",
+          sub: syncStatus.lastError
+            ? `Last upload failed (${syncStatus.lastError}). It retries on the next change.`
+            : syncStatus.lastPush
+              ? `Last upload ${new Date(syncStatus.lastPush).toLocaleTimeString()}`
+              : "What you watch, mark and save here is sent to your account.",
+          trailing: switchEl(
+            !!pref("nuvio.upload", true),
+            (v) => setPref("nuvio.upload", v),
+            "Upload changes to Nuvio"
+          )
+        }),
+        rowShell({
           title: "Sign out of Nuvio",
           sub: "Stops syncing. Downloaded profiles stay on this iPad until you delete them.",
           danger: true,
@@ -501,11 +521,106 @@ function customAccount(ctx) {
       h(
         "p.settings-note",
         {},
-        "Syncing downloads from your account. Anything you watch or save here stays on this iPad for now and isn't sent back to Nuvio."
+        "Your Nuvio profiles sync both ways: changes here are uploaded a few seconds later, and the latest from your account is downloaded each time the app opens."
       )
     );
   }
   return cards;
+}
+
+function customCollections(ctx) {
+  const list = store.collections();
+  const hidden = new Set(pref("collections.hidden", []));
+  const profile = store.activeProfile();
+  const cloud = !!account() && String(profile?.id || "").startsWith(CLOUD_PREFIX);
+  const importFile = () => {
+    const input = h("input", { type: "file", accept: "application/json,.json" });
+    input.addEventListener("change", async () => {
+      try {
+        const imported = parseCollectionsFile(await input.files[0].text());
+        store.saveCollections(imported);
+        window.dispatchEvent(new Event("nuvio:collections-changed"));
+        toast(`Imported ${imported.length} collection${imported.length === 1 ? "" : "s"}`);
+        if (cloud) {
+          pushCollections(profile.id)
+            .then(() => toast("Saved to your Nuvio account"))
+            .catch((e) => toast(`Couldn't save to Nuvio: ${e.message}`));
+        }
+        ctx.refresh();
+      } catch (error) {
+        toast(error.message || "That file could not be read");
+      }
+    });
+    input.click();
+  };
+  const out = [
+    h(
+      "p.settings-note",
+      {},
+      "Collections group catalogs into folders shown on Home, like Streaming Services → Netflix. They use TMDB, so they need a TMDB key."
+    ),
+    groupCard(
+      [
+        rowShell({
+          title: "Import collections",
+          sub: "Choose a Nuvio collections .json export.",
+          onClick: importFile
+        }),
+        cloud && list.length
+          ? rowShell({
+              title: "Save to Nuvio account",
+              sub: "Upload these collections to this profile on your account.",
+              onClick: () =>
+                pushCollections(profile.id)
+                  .then(() => toast("Saved to your Nuvio account"))
+                  .catch((e) => toast(`Couldn't save: ${e.message}`))
+            })
+          : null
+      ].filter(Boolean)
+    )
+  ];
+  if (list.length) {
+    out.push(
+      h("div.set-section-label", {}, "SHOW ON HOME"),
+      groupCard(
+        list.map((c) =>
+          rowShell({
+            title: c.title,
+            sub: `${c.folders?.length || 0} folders${c.pinToTop !== false ? " • above catalogs" : ""}`,
+            trailing: switchEl(
+              !hidden.has(c.id),
+              (on) => {
+                if (on) hidden.delete(c.id);
+                else hidden.add(c.id);
+                setPref("collections.hidden", [...hidden]);
+              },
+              c.title
+            )
+          })
+        )
+      ),
+      groupCard([
+        rowShell({
+          title: "Remove all collections from this device",
+          danger: true,
+          trailing: null,
+          onClick: () => {
+            store.saveCollections([]);
+            window.dispatchEvent(new Event("nuvio:collections-changed"));
+            ctx.refresh();
+          }
+        })
+      ])
+    );
+  } else
+    out.push(
+      h(
+        "p.settings-note",
+        {},
+        "No collections yet. Signing in with Nuvio downloads the ones on your account, or import a file."
+      )
+    );
+  return out;
 }
 
 function customTracking() {
@@ -635,6 +750,7 @@ function pageBody(page, ctx) {
   if (page.custom === "addons") return [sectionAddons()].flat();
   if (page.custom === "account") out.push(...customAccount(ctx));
   if (page.custom === "tracking") out.push(...customTracking());
+  if (page.custom === "collections") out.push(...customCollections(ctx));
   // group rows between section labels into cards
   let group = [];
   const flush = () => {

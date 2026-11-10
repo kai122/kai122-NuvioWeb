@@ -320,7 +320,7 @@ function logosBlock(title, entries) {
 }
 
 // TMDB titles: find the IMDb id so the user's add-ons can provide streams.
-async function openTmdbTitle(item) {
+export async function openTmdbTitle(item) {
   try {
     const imdb = await imdbIdFor(item.type, item.tmdbId);
     if (imdb) {
@@ -565,7 +565,13 @@ export function renderDetail([type, rawId]) {
       watchedButton.setAttribute("aria-label", watched ? "Mark as unwatched" : "Mark as watched");
     };
     watchedButton.addEventListener("click", () => {
-      store.setWatched(meta.id, !store.isWatched(meta.id));
+      store.setWatched(meta.id, !store.isWatched(meta.id), {
+        contentId: meta.id,
+        type: meta.type,
+        season: null,
+        episode: null,
+        title: meta.name || ""
+      });
       syncWatched();
     });
     syncWatched();

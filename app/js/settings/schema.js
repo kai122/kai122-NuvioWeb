@@ -418,17 +418,8 @@ export const PAGES = {
     id: "collections",
     title: "Collections",
     parent: "layout",
-    rows: [
-      {
-        t: "note",
-        text: "Create custom catalog groupings with folders shown on Home."
-      },
-      {
-        t: "note",
-        text: "Collections are not available in the touch app yet."
-      }
-    ],
-    custom: null
+    rows: [],
+    custom: "collections"
   },
   cw: {
     id: "cw",
