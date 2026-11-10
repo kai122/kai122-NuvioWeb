@@ -6,6 +6,7 @@ import { pref, setPref } from "../prefs.js";
 import { fetchSubtitles, fetchMeta, preloadStreams, fetchStreams } from "../addons.js";
 import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
+import { fetchSkipSegments } from "../services/skip.js";
 import { createStreamList, playability, choiceFor } from "../streamlist.js";
 import {
   findCue,
@@ -104,6 +105,7 @@ export function renderPlayer() {
   const ratingBadge = h("div.player-rating-badge");
   const pauseOverlay = h("div.player-pause-overlay");
   const nextCard = h("div.player-next");
+  const segmentButton = h("button.player-skip-segment", { type: "button" });
   const panelHost = h("div.player-panel-host");
 
   // --- Top right: picture-in-picture, lock, back -----------------------------
@@ -204,6 +206,7 @@ export function renderPlayer() {
     seekBadge,
     chrome,
     nextCard,
+    segmentButton,
     spinner,
     errorBox,
     unlockButton,
@@ -1112,13 +1115,19 @@ export function renderPlayer() {
 
   // --- Next episode -----------------------------------------------------------------
   async function loadMeta() {
-    if (!playback.metaId) return;
+    if (!playback.metaId) {
+      loadSkipSegments();
+      return;
+    }
     try {
       meta = await fetchMeta(playback.type, playback.metaId);
     } catch (_) {
       meta = null;
     }
-    if (!meta) return;
+    if (!meta) {
+      loadSkipSegments();
+      return;
+    }
     if (!playback.description && meta.description && !playback.season)
       playback.description = meta.description;
     if (playback.type === "series") {
@@ -1126,7 +1135,75 @@ export function renderPlayer() {
       const i = episodes.findIndex((v) => v.id === playback.videoId);
       nextVideo = i >= 0 ? episodes[i + 1] || null : null;
       if (nextVideo && !isReleased(nextVideo)) nextVideo = null;
+      absoluteEpisode = i >= 0 ? i + 1 : 0;
     }
+    loadSkipSegments();
+  }
+
+  // --- Skip intro / recap / credits ------------------------------------------------
+  let absoluteEpisode = 0;
+  let skipSegments = [];
+  let shownSegment = null;
+  const skippedAuto = new Set();
+  const SKIP_LABELS = { intro: "Skip Intro", recap: "Skip Recap", credits: "Skip Credits" };
+
+  async function loadSkipSegments() {
+    const forVideo = playback.videoId;
+    const list = await fetchSkipSegments(playback, { absoluteEpisode }).catch(() => []);
+    if (forVideo === playback.videoId) skipSegments = list;
+  }
+
+  function skipSegment(seg) {
+    // Credits with a next episode: go straight to it, like the native app.
+    if (seg.kind === "credits" && nextVideo && !nextDismissed) {
+      playNext();
+      return;
+    }
+    const end = Math.min(seg.end, Number.isFinite(video.duration) ? video.duration - 0.5 : seg.end);
+    video.currentTime = end;
+    hideSkip();
+  }
+
+  function hideSkip() {
+    shownSegment = null;
+    segmentButton.classList.remove("is-on");
+  }
+
+  function checkSkip() {
+    if (!skipSegments.length) return;
+    const t = video.currentTime;
+    let seg = skipSegments.find((s) => t >= s.start && t < s.end - 0.5);
+    // The Next Episode card already covers the credits.
+    if (seg?.kind === "credits" && nextCard.classList.contains("is-on")) seg = null;
+    if (!seg) {
+      if (shownSegment) hideSkip();
+      return;
+    }
+    const key = `${seg.kind}:${seg.start}`;
+    if (pref("pb.autoSkip", false) && !skippedAuto.has(key)) {
+      skippedAuto.add(key);
+      toast(SKIP_LABELS[seg.kind].replace("Skip", "Skipped"));
+      skipSegment(seg);
+      return;
+    }
+    if (shownSegment === seg) return;
+    shownSegment = seg;
+    fill(
+      segmentButton,
+      h(
+        "span",
+        {},
+        seg.kind === "credits" && nextVideo && !nextDismissed
+          ? "Next Episode"
+          : SKIP_LABELS[seg.kind]
+      ),
+      icon("skipNext", 20)
+    );
+    segmentButton.onclick = (event) => {
+      event.stopPropagation();
+      skipSegment(seg);
+    };
+    segmentButton.classList.add("is-on");
   }
 
   // Next Up after finishing an episode: the episode after the furthest one
@@ -1282,6 +1359,7 @@ export function renderPlayer() {
     syncTime();
     save(false);
     checkNext();
+    checkSkip();
   });
   video.addEventListener("progress", syncTime);
   video.addEventListener("play", () => {

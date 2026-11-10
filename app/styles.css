@@ -3832,3 +3832,36 @@ body[data-route="play"] {
   overflow: hidden;
   height: 100dvh;
 }
+
+/* Skip Intro / Recap / Credits (bottom right, like the native player) */
+.player-skip-segment {
+  position: absolute;
+  right: 32px;
+  bottom: calc(132px + var(--safe-bottom));
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 46px;
+  padding: 0 18px 0 20px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #111;
+  font-size: 16px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(10px);
+  transition:
+    opacity 220ms var(--ease),
+    transform 220ms var(--ease);
+  pointer-events: none;
+}
+.player-skip-segment.is-on {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.screen-player.is-locked .player-skip-segment {
+  display: none;
+}

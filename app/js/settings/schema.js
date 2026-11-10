@@ -1213,8 +1213,34 @@ export const PAGES = {
         title: "SKIP SEGMENTS"
       },
       {
+        t: "toggle",
+        pref: "pb.skipIntro",
+        title: "Skip Intro",
+        sub: "Show a Skip button during intros, recaps and credits.",
+        def: true
+      },
+      {
+        t: "toggle",
+        pref: "pb.autoSkip",
+        title: "Automatic Skipping",
+        sub: "Skip them without tapping.",
+        def: false
+      },
+      {
+        t: "section",
+        title: "SOURCES"
+      },
+      {
         t: "note",
-        text: "Intro and credits detection needs a service the web version can't reach yet, so there's nothing to switch on here. Double-tap the sides of the video, or use the ±10 s buttons, to skip."
+        text: "Anime: AniSkip, built in. TV shows and movies: IntroDB, which only answers apps (not websites), so it needs a small free relay. See relay/README.md in the GitHub repo, then paste the relay address below."
+      },
+      {
+        t: "text",
+        pref: "pb.skipRelay",
+        title: "IntroDB relay address",
+        sub: "For example https://introdb-relay.yourname.workers.dev",
+        ph: "https://…workers.dev",
+        secret: false
       }
     ],
     custom: null
