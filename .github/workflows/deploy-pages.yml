@@ -33,8 +33,11 @@ jobs:
       - name: Write local.properties from secrets
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-          NUVIO_SUPABASE_URL: ${{ secrets.NUVIO_SUPABASE_URL }}
-          NUVIO_SUPABASE_ANON_KEY: ${{ secrets.NUVIO_SUPABASE_ANON_KEY }}
+          # Default: Nuvio's official server. This is its public client key,
+          # published by NuvioMedia in github.com/NuvioMedia/self-host; it is
+          # not a secret. Set the two repo secrets to use your own server.
+          NUVIO_SUPABASE_URL: ${{ secrets.NUVIO_SUPABASE_URL || 'https://api.nuvio.tv' }}
+          NUVIO_SUPABASE_ANON_KEY: ${{ secrets.NUVIO_SUPABASE_ANON_KEY || 'sb_publishable_1Clq8rlTVACkdcZuqr6_AD__xUUC_EN' }}
           TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
           TRAKT_CLIENT_SECRET: ${{ secrets.TRAKT_CLIENT_SECRET }}
           SIMKL_CLIENT_ID: ${{ secrets.SIMKL_CLIENT_ID }}
