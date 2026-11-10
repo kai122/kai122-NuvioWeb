@@ -161,9 +161,17 @@ export const store = {
     list.splice(to, 0, list.splice(from, 1)[0]);
     this.saveAddonUrls(list);
   },
+  // Clears this device's copy only. It is not uploaded as a deletion: for a
+  // Nuvio profile the account's progress comes back on the next sync.
   clearContinueWatching() {
-    this.saveScoped("progress", {});
-    this.saveScoped("nextUp", {});
+    const id = this.activeProfileId;
+    write(`progress.${id}`, {});
+    write(`nextUp.${id}`, {});
+    try {
+      localStorage.removeItem(`${PREFIX}syncBaseline.${id}`);
+    } catch (_) {
+      /* ignore */
+    }
   },
   resetDevice() {
     try {

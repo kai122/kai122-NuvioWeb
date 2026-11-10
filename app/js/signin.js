@@ -1,5 +1,5 @@
 // "Sign in with Nuvio" sheet, used by Settings and the profile picker.
-import { h, icon, fill } from "./dom.js";
+import { h, icon, fill, safeHttpUrl } from "./dom.js";
 import { openSheet, toast } from "./sheet.js";
 import { startSignIn, downloadAccount } from "./services/nuvioAccount.js";
 
@@ -46,7 +46,11 @@ export function openSignIn({ onDone, onFail } = {}) {
         h("div.signin-code", {}, s.code),
         h(
           "a.play-button.is-wide",
-          { href: s.url, target: "_blank", rel: "noopener noreferrer" },
+          {
+            href: safeHttpUrl(s.url) || "https://nuvio.tv/tv-login",
+            target: "_blank",
+            rel: "noopener noreferrer"
+          },
           icon("external", 20),
           h("span", {}, "Open nuvio.tv to approve")
         ),

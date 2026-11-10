@@ -355,9 +355,19 @@ async function downloadAll() {
           at: timeOf(r.watched_at)
         };
       }
+      // Un-marked on another device since the last sync: drop it here too.
+      const gone = [...watchedBaseline(profileId)].filter((id) => !info[id]);
+      if (gone.length) {
+        const drop = new Set(gone);
+        store.saveForProfile(
+          profileId,
+          "watched",
+          store.readForProfile(profileId, "watched", []).filter((id) => !drop.has(id))
+        );
+      }
       store.mergeForProfile(profileId, "watched", Object.keys(info));
       store.mergeWatchedInfo(profileId, info);
-      rememberWatched(profileId, store.readForProfile(profileId, "watched", []));
+      rememberWatched(profileId, Object.keys(info));
       summary.watched += Object.keys(info).length;
     }
 
@@ -379,7 +389,18 @@ async function downloadAll() {
           addedAt: timeOf(r.added_at || r.updated_at || r.created_at)
         }))
         .sort((a, b) => b.addedAt - a.addedAt);
+      // Removed on another device since the last sync: drop it here too.
+      const incomingIds = new Set(library.map((x) => x.id));
+      const wasSynced = idBaseline("library", profileId);
+      store.saveForProfile(
+        profileId,
+        "library",
+        store
+          .readForProfile(profileId, "library", [])
+          .filter((x) => !wasSynced.has(x.id) || incomingIds.has(x.id))
+      );
       store.mergeForProfile(profileId, "library", library);
+      rememberIds("library", profileId, [...incomingIds]);
       summary.library += library.length;
     }
 
@@ -440,8 +461,30 @@ async function downloadAll() {
           updatedAt: timeOf(r.updated_at ?? r.last_watched)
         };
       }
+      // Finished or removed on another device since the last sync: drop the
+      // copy here, so it isn't uploaded again.
+      const incomingKeys = new Set(
+        rows.map((r) =>
+          progressKey({
+            metaId: r.content_id,
+            season: r.season ?? r.season_number,
+            episode: r.episode ?? r.episode_number
+          })
+        )
+      );
+      const wasSynced = baselineKeys(profileId);
+      const localProgress = store.readForProfile(profileId, "progress", {});
+      for (const [id, e] of Object.entries(localProgress)) {
+        const key = progressKey(e);
+        if (wasSynced.has(key) && !incomingKeys.has(key)) delete localProgress[id];
+      }
+      store.saveForProfile(profileId, "progress", localProgress);
       store.mergeForProfile(profileId, "progress", progress);
-      rememberProgressKeys(profileId, Object.values(progress));
+      try {
+        localStorage.setItem(baselineKey(profileId), JSON.stringify([...incomingKeys]));
+      } catch (_) {
+        /* ignore */
+      }
       summary.progress += Object.keys(progress).length;
     }
   }
@@ -538,7 +581,30 @@ async function pushProgress(profileId) {
       body: { p_profile_id: p, p_entries: rows, p_origin_client_id: clientId() }
     });
   }
-  rememberProgressKeys(profileId, entries);
+  rememberProgressKeys(
+    profileId,
+    rows.map((r) => ({ metaId: r.content_id, season: r.season, episode: r.episode }))
+  );
+}
+
+function idBaseline(kind, profileId) {
+  try {
+    return new Set(
+      JSON.parse(localStorage.getItem(`nuvioTouch.syncBase.${kind}.${profileId}`) || "[]")
+    );
+  } catch (_) {
+    return new Set();
+  }
+}
+function rememberIds(kind, profileId, ids) {
+  try {
+    localStorage.setItem(
+      `nuvioTouch.syncBase.${kind}.${profileId}`,
+      JSON.stringify([...new Set(ids)])
+    );
+  } catch (_) {
+    /* ignore */
+  }
 }
 
 function watchedBaseline(profileId) {
@@ -580,7 +646,15 @@ async function pushWatched(profileId) {
       body: { p_profile_id: profileIndex(profileId), p_keys: removed }
     });
   }
-  rememberWatched(profileId, ids);
+  // The baseline lists what the account has: only ids that get uploaded.
+  rememberWatched(
+    profileId,
+    ids.filter((id) =>
+      info[id]?.contentId
+        ? info[id].type !== "series" || info[id].episode != null
+        : /^(tt\d+):(\d+):(\d+)$/.test(String(id))
+    )
+  );
   const items = ids
     .map((id) => {
       const i = info[id];
@@ -639,6 +713,11 @@ async function pushLibrary(profileId) {
       }))
     }
   });
+  rememberIds(
+    "library",
+    profileId,
+    items.map((i) => i.id)
+  );
 }
 
 async function pushAddons(profileId) {
