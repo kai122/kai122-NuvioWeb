@@ -8,25 +8,6 @@ function addonsChanged() {
   window.dispatchEvent(new Event("nuvio:addons-changed"));
 }
 
-function card(...rows) {
-  return h("div.settings-card", {}, rows);
-}
-
-function row({ iconName, title, subtitle, onClick, trailing, danger = false }) {
-  return h(
-    onClick ? "button.settings-row" : "div.settings-row.is-static",
-    { type: onClick ? "button" : null, onclick: onClick, class: danger ? "is-danger" : "" },
-    iconName ? h("span.settings-icon", {}, icon(iconName, 22)) : null,
-    h(
-      "span.settings-copy",
-      {},
-      h("span.settings-title", {}, title),
-      subtitle ? h("span.settings-sub", {}, subtitle) : null
-    ),
-    trailing === undefined ? (onClick ? icon("chevronRight", 22) : null) : trailing
-  );
-}
-
 function toggle(on, onChange, label) {
   const el = h("button.switch", {
     type: "button",
@@ -45,7 +26,7 @@ function toggle(on, onChange, label) {
   return el;
 }
 
-export function sectionAddons(refreshSection) {
+export function sectionAddons() {
   const listEl = h("div.addon-list", {}, h("div.settings-loading", {}, h("span.spinner")));
 
   async function draw() {

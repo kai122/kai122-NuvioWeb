@@ -171,8 +171,38 @@ export async function fetchMeta(type, id) {
   return null;
 }
 
-// Calls onResult({ addon, streams, error }) as each add-on answers.
+// "Preload Next Episode Sources": results gathered early are replayed to the
+// next fetchStreams call for the same video (for a few minutes).
+const preloaded = new Map();
+const PRELOAD_TTL_MS = 5 * 60 * 1000;
+
+export function preloadStreams(type, videoId) {
+  const key = `${type}/${videoId}`;
+  if (preloaded.has(key)) return;
+  const results = [];
+  const done = fetchStreamsLive(type, videoId, (r) => results.push(r)).then((count) => ({
+    results,
+    count
+  }));
+  preloaded.set(key, { at: Date.now(), done });
+}
+
 export async function fetchStreams(type, videoId, onResult) {
+  const key = `${type}/${videoId}`;
+  const hit = preloaded.get(key);
+  preloaded.delete(key);
+  if (hit && Date.now() - hit.at < PRELOAD_TTL_MS) {
+    const { results, count } = await hit.done;
+    if (results.some((r) => r.streams.length)) {
+      results.forEach(onResult);
+      return count;
+    }
+  }
+  return fetchStreamsLive(type, videoId, onResult);
+}
+
+// Calls onResult({ addon, streams, error }) as each add-on answers.
+async function fetchStreamsLive(type, videoId, onResult) {
   const addons = (await loadAddons()).filter(
     (addon) => addon.manifest && supports(addon, "stream", type, videoId)
   );

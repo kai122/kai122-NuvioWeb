@@ -19,7 +19,12 @@ function pageCategory(pageId) {
 }
 
 function switchEl(on, onChange, label) {
-  const el = h("button.switch", { type: "button", role: "switch", "aria-checked": String(on), "aria-label": label });
+  const el = h("button.switch", {
+    type: "button",
+    role: "switch",
+    "aria-checked": String(on),
+    "aria-label": label
+  });
   el.classList.toggle("is-on", on);
   el.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -31,13 +36,12 @@ function switchEl(on, onChange, label) {
   return el;
 }
 
-function rowShell({ title, sub, trailing, onClick, danger, live = true }) {
+function rowShell({ title, sub, trailing, onClick, danger }) {
   const copy = h(
     "span.settings-copy",
     {},
     h("span.settings-title", {}, title),
-    sub ? h("span.settings-sub.is-wrap", {}, sub) : null,
-    live === false ? h("span.settings-soon", {}, "Saved. Not active in this version yet.") : null
+    sub ? h("span.settings-sub.is-wrap", {}, sub) : null
   );
   return h(
     onClick ? "button.settings-row" : "div.settings-row.is-static",
@@ -111,8 +115,21 @@ function renderRow(row, ctx) {
       return rowShell({
         title: row.title,
         sub: row.sub,
-        live: row.live,
-        trailing: switchEl(on, (v) => setPref(row.pref, v), row.title)
+        trailing: switchEl(
+          on,
+          (v) => {
+            setPref(row.pref, v);
+            if (
+              row.pref === "notif.episodes" &&
+              v &&
+              "Notification" in window &&
+              Notification.permission === "default"
+            ) {
+              Notification.requestPermission().catch(() => {});
+            }
+          },
+          row.title
+        )
       });
     }
     case "select": {
@@ -120,20 +137,22 @@ function renderRow(row, ctx) {
       return rowShell({
         title: row.title,
         sub: row.sub,
-        live: row.live,
         trailing: h("span.settings-value", {}, labelOf(row, value)),
         onClick: () => {
           const sheet = openSheet({
             title: row.title,
-            content: optionList(row.opts.map((o) => ({ value: o.v, label: o.l })), {
-              selected: value,
-              onSelect: (v) => {
-                const original = row.opts.find((o) => String(o.v) === String(v));
-                setPref(row.pref, original ? original.v : v);
-                sheet.close();
-                ctx.refresh();
+            content: optionList(
+              row.opts.map((o) => ({ value: o.v, label: o.l })),
+              {
+                selected: value,
+                onSelect: (v) => {
+                  const original = row.opts.find((o) => String(o.v) === String(v));
+                  setPref(row.pref, original ? original.v : v);
+                  sheet.close();
+                  ctx.refresh();
+                }
               }
-            })
+            )
           });
         }
       });
@@ -156,7 +175,7 @@ function renderRow(row, ctx) {
       return h(
         "div.settings-row.is-static.is-slider",
         {},
-        h("span.settings-copy", {}, h("span.settings-title", {}, row.title), row.live === false ? h("span.settings-soon", {}, "Saved. Not active in this version yet.") : null, input),
+        h("span.settings-copy", {}, h("span.settings-title", {}, row.title), input),
         out
       );
     }
@@ -165,7 +184,6 @@ function renderRow(row, ctx) {
       return rowShell({
         title: row.title,
         sub: row.sub,
-        live: row.live,
         trailing: h("span.settings-value", {}, value ? (row.secret ? "Set" : value) : "Not set"),
         onClick: () => openTextSheet(row, ctx.refresh)
       });
@@ -193,12 +211,23 @@ function renderRow(row, ctx) {
       );
     }
     case "action":
-      return rowShell({ title: row.title, sub: row.sub, danger: row.danger, onClick: () => runAction(row.id, ctx), trailing: null });
+      return rowShell({
+        title: row.title,
+        sub: row.sub,
+        danger: row.danger,
+        onClick: () => runAction(row.id, ctx),
+        trailing: null
+      });
     case "link":
       return h(
         "a.settings-row",
         { href: row.href, target: "_blank", rel: "noopener noreferrer" },
-        h("span.settings-copy", {}, h("span.settings-title", {}, row.title), row.sub ? h("span.settings-sub.is-wrap", {}, row.sub) : null),
+        h(
+          "span.settings-copy",
+          {},
+          h("span.settings-title", {}, row.title),
+          row.sub ? h("span.settings-sub.is-wrap", {}, row.sub) : null
+        ),
         icon("chevronRight", 22)
       );
     case "themes":
@@ -227,7 +256,9 @@ function renderRow(row, ctx) {
       return h(
         "div.set-poster-preview",
         {},
-        h("div.set-poster-card", { style: { width: `${w}px`, height: `${Math.round((w * 3) / 2)}px`, borderRadius: `${r}px` } }),
+        h("div.set-poster-card", {
+          style: { width: `${w}px`, height: `${Math.round((w * 3) / 2)}px`, borderRadius: `${r}px` }
+        }),
         h(
           "div.set-poster-meta",
           {},
@@ -242,15 +273,23 @@ function renderRow(row, ctx) {
       return h(
         "div.set-sub-preview",
         {},
-        h("span", {
-          style: {
-            fontSize: `${Math.round(18 * (Number(pref("subs.size", 100)) / 100))}px`,
-            fontWeight: pref("subs.bold", false) ? "700" : "500",
-            color: pref("subs.color", "#ffffff"),
-            textShadow: pref("subs.shadow", false) ? "0 2px 4px rgba(0,0,0,.8)" : pref("subs.outline", true) ? "0 0 2px #000, 0 0 3px #000" : "none",
-            background: `rgba(0,0,0,${Number(pref("subs.bgOpacity", 0)) / 100})`
-          }
-        }, "Every story begins with a little curiosity.")
+        h(
+          "span",
+          {
+            style: {
+              fontSize: `${Math.round(18 * (Number(pref("subs.size", 100)) / 100))}px`,
+              fontWeight: pref("subs.bold", false) ? "700" : "500",
+              color: pref("subs.color", "#ffffff"),
+              textShadow: pref("subs.shadow", false)
+                ? "0 2px 4px rgba(0,0,0,.8)"
+                : pref("subs.outline", true)
+                  ? "0 0 2px #000, 0 0 3px #000"
+                  : "none",
+              background: `rgba(0,0,0,${Number(pref("subs.bgOpacity", 0)) / 100})`
+            }
+          },
+          "Every story begins with a little curiosity."
+        )
       );
     default:
       return null;
@@ -279,7 +318,9 @@ function runAction(id, ctx) {
     case "signout":
       navigate("profiles");
       break;
-    case "delete":
+    case "deleteProfile":
+      confirmDeleteProfile();
+      break;
     case "reset":
       confirmReset();
       break;
@@ -292,7 +333,11 @@ function runAction(id, ctx) {
       } else toast("Notifications are not supported here.");
       break;
     case "exportSettings": {
-      const blob = new Blob([JSON.stringify(allPrefs(), null, 2)], { type: "application/json" });
+      // API keys stay on this device: they're left out of the exported file.
+      const prefs = Object.fromEntries(
+        Object.entries(allPrefs()).filter(([key]) => !/(^|\.)key$/i.test(key))
+      );
+      const blob = new Blob([JSON.stringify(prefs, null, 2)], { type: "application/json" });
       const a = h("a", { href: URL.createObjectURL(blob), download: "nuvio-settings.json" });
       document.body.append(a);
       a.click();
@@ -318,13 +363,52 @@ function runAction(id, ctx) {
   }
 }
 
+function confirmDeleteProfile() {
+  const profile = store.activeProfile();
+  if (!profile) return;
+  const sheet = openSheet({
+    title: `Delete ${profile.name}?`,
+    content: h(
+      "div.form",
+      {},
+      h(
+        "p.form-hint",
+        {},
+        "This removes the profile and its library, progress and watched history from this device. It cannot be undone."
+      ),
+      h(
+        "div.form-actions",
+        {},
+        h("button.pill-button", { type: "button", onclick: () => sheet.close() }, "Cancel"),
+        h(
+          "button.play-button.is-danger",
+          {
+            type: "button",
+            onclick: () => {
+              sheet.close();
+              store.removeProfile(profile.id);
+              store.forgetActiveProfile();
+              navigate("profiles", { replace: true });
+            }
+          },
+          "Delete"
+        )
+      )
+    )
+  });
+}
+
 function confirmReset() {
   const sheet = openSheet({
     title: "Delete all data on this device?",
     content: h(
       "div.form",
       {},
-      h("p.form-hint", {}, "This removes every profile, add-on, library entry and saved progress stored here. It cannot be undone."),
+      h(
+        "p.form-hint",
+        {},
+        "This removes every profile, add-on, library entry and saved progress stored here. It cannot be undone."
+      ),
       h(
         "div.form-actions",
         {},
@@ -335,7 +419,9 @@ function confirmReset() {
             type: "button",
             onclick: () => {
               try {
-                Object.keys(localStorage).filter((k) => k.startsWith("nuvioTouch.")).forEach((k) => localStorage.removeItem(k));
+                Object.keys(localStorage)
+                  .filter((k) => k.startsWith("nuvioTouch."))
+                  .forEach((k) => localStorage.removeItem(k));
                 sessionStorage.clear();
               } catch (_) {
                 /* ignore */
@@ -355,7 +441,21 @@ function confirmReset() {
 function customAccount() {
   const profile = store.activeProfile();
   return [
-    h("div.profile-hero-card", {}, avatarEl(profile, 64), h("div.settings-copy", {}, h("div.profile-hero-name", {}, profile?.name || ""), h("div.settings-sub", {}, `${store.library().length} saved • ${store.continueWatching().length} in progress`))),
+    h(
+      "div.profile-hero-card",
+      {},
+      avatarEl(profile, 64),
+      h(
+        "div.settings-copy",
+        {},
+        h("div.profile-hero-name", {}, profile?.name || ""),
+        h(
+          "div.settings-sub",
+          {},
+          `${store.library().length} saved • ${store.continueWatching().length} in progress`
+        )
+      )
+    ),
     groupCard([
       rowShell({ title: "Status", trailing: h("span.settings-value", {}, "Local profile") }),
       rowShell({ title: "Email", trailing: h("span.settings-value", {}, "Not signed in") })
@@ -375,7 +475,12 @@ function customTracking() {
     ...providers.map((p) =>
       h(
         "button.set-provider",
-        { type: "button", class: p.cls, onclick: () => toast("Sign-in for tracking services is not available in the touch app yet.") },
+        {
+          type: "button",
+          class: p.cls,
+          onclick: () =>
+            toast("Sign-in for tracking services is not available in the touch app yet.")
+        },
         h("span.set-provider-name", {}, p.name),
         h("span.set-provider-sub", {}, "Not connected"),
         icon("chevronRight", 22)
@@ -384,27 +489,15 @@ function customTracking() {
   ];
 }
 
-function customDebrid() {
-  const services = ["Real-Debrid", "TorBox", "Premiumize"];
-  return [
-    groupCard(
-      services.map((name) => {
-        const key = `debrid.${name.toLowerCase()}`;
-        return rowShell({
-          title: name,
-          sub: "API key",
-          trailing: h("span.settings-value", {}, pref(key, "") ? "Set" : "Not set"),
-          onClick: () => openTextSheet({ pref: key, title: name, sub: "Saved on this device only.", ph: "API key", secret: true }, () => navigate(location.hash.replace(/^#\//, ""), { replace: true }))
-        });
-      })
-    ),
-    h("p.settings-note", {}, "Most add-ons take the debrid key in their own setup page. Keys saved here are stored on this device only.")
-  ];
-}
-
 function customAbout() {
   return [
-    h("div.set-about", {}, h("img.set-about-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }), h("div.muted", {}, `Version ${VERSION}`), h("div.muted", {}, "Made with ❤️ by Tapframe and friends"))
+    h(
+      "div.set-about",
+      {},
+      h("img.set-about-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }),
+      h("div.muted", {}, `Version ${VERSION}`),
+      h("div.muted", {}, "Made with ❤️ by Tapframe and friends")
+    )
   ];
 }
 
@@ -414,7 +507,14 @@ function customHeroSources(pageHost) {
     .then((list) => {
       const hidden = new Set(pref("home.hiddenCatalogs", []));
       const hero = pref("home.heroCatalogs", null); // null = all
-      if (!list.length) return fill(wrap, rowShell({ title: "No home catalogs", sub: "Enable or add an addon with catalogs to configure Home." }));
+      if (!list.length)
+        return fill(
+          wrap,
+          rowShell({
+            title: "No home catalogs",
+            sub: "Enable or add an addon with catalogs to configure Home."
+          })
+        );
       const selected = new Set(hero || list.map((c) => c.key));
       fill(
         wrap,
@@ -422,17 +522,29 @@ function customHeroSources(pageHost) {
           rowShell({
             title: `${c.catalog.name || c.catalog.id}`,
             sub: `${c.addon.manifest.name} • ${c.catalog.type}`,
-            trailing: switchEl(selected.has(c.key), (on) => {
-              if (on) selected.add(c.key);
-              else selected.delete(c.key);
-              setPref("home.heroCatalogs", [...selected]);
-            }, c.catalog.name)
+            trailing: switchEl(
+              selected.has(c.key),
+              (on) => {
+                if (on) selected.add(c.key);
+                else selected.delete(c.key);
+                setPref("home.heroCatalogs", [...selected]);
+              },
+              c.catalog.name
+            )
           })
         )
       );
       void hidden;
     })
-    .catch(() => fill(wrap, rowShell({ title: "Couldn’t load Home catalogs", sub: "Check your connection and try again." })));
+    .catch(() =>
+      fill(
+        wrap,
+        rowShell({
+          title: "Couldn’t load Home catalogs",
+          sub: "Check your connection and try again."
+        })
+      )
+    );
   void pageHost;
   return wrap;
 }
@@ -449,11 +561,15 @@ function customCatalogVisibility() {
           rowShell({
             title: `${c.catalog.name || c.catalog.id}`,
             sub: `${c.addon.manifest.name} • ${c.catalog.type}`,
-            trailing: switchEl(!hidden.has(c.key), (on) => {
-              if (on) hidden.delete(c.key);
-              else hidden.add(c.key);
-              setPref("home.hiddenCatalogs", [...hidden]);
-            }, c.catalog.name)
+            trailing: switchEl(
+              !hidden.has(c.key),
+              (on) => {
+                if (on) hidden.delete(c.key);
+                else hidden.add(c.key);
+                setPref("home.hiddenCatalogs", [...hidden]);
+              },
+              c.catalog.name
+            )
           })
         )
       );
@@ -471,7 +587,7 @@ function renderCustom(row) {
 // ---- Screen -----------------------------------------------------------------
 function pageBody(page, ctx) {
   const out = [];
-  if (page.custom === "addons") return [sectionAddons(ctx.refresh)].flat();
+  if (page.custom === "addons") return [sectionAddons()].flat();
   if (page.custom === "account") out.push(...customAccount());
   if (page.custom === "tracking") out.push(...customTracking());
   // group rows between section labels into cards
@@ -481,13 +597,21 @@ function pageBody(page, ctx) {
     group = [];
   };
   for (const row of page.rows) {
-    if (row.t === "section" || row.t === "note" || row.t === "heroSources" || row.t === "catalogVisibility" || row.t === "tiles" || row.t === "themes" || row.t === "posterPreview" || row.t === "subPreview") {
+    if (
+      row.t === "section" ||
+      row.t === "note" ||
+      row.t === "heroSources" ||
+      row.t === "catalogVisibility" ||
+      row.t === "tiles" ||
+      row.t === "themes" ||
+      row.t === "posterPreview" ||
+      row.t === "subPreview"
+    ) {
       flush();
       out.push(renderCustom(row) || renderRow(row, ctx));
     } else group.push(renderRow(row, ctx));
   }
   flush();
-  if (page.custom === "debrid") out.push(...customDebrid());
   if (page.custom === "about") out.push(...customAbout());
   return out;
 }
@@ -495,14 +619,24 @@ function pageBody(page, ctx) {
 function categoryBody(cat, ctx) {
   return [
     groupCard(cat.rows.map((row) => renderRow(row, ctx))),
-    h("div.set-footer", {}, h("img.set-about-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }), h("div.muted", {}, "Made with ❤️ by Tapframe and friends"))
+    h(
+      "div.set-footer",
+      {},
+      h("img.set-about-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }),
+      h("div.muted", {}, "Made with ❤️ by Tapframe and friends")
+    )
   ];
 }
 
 export function renderSettings([initial] = []) {
   const nav = h("nav.settings-nav");
   const content = h("div.settings-content");
-  const root = h("div.screen.screen-settings", {}, h("div.settings-sidebar", {}, h("h1.settings-big-title", {}, "Settings"), nav), content);
+  const root = h(
+    "div.screen.screen-settings",
+    {},
+    h("div.settings-sidebar", {}, h("h1.settings-big-title", {}, "Settings"), nav),
+    content
+  );
   const known = (id) => CATEGORIES.some((c) => c.id === id) || !!PAGES[id];
   const target = known(initial) ? initial : "look";
   const ctx = {
@@ -517,7 +651,11 @@ export function renderSettings([initial] = []) {
       ...CATEGORIES.map((c) =>
         h(
           "button.settings-nav-item",
-          { type: "button", class: c.id === category.id ? "is-selected" : "", onclick: () => navigate(`profile/${c.id}`, { replace: true }) },
+          {
+            type: "button",
+            class: c.id === category.id ? "is-selected" : "",
+            onclick: () => navigate(`profile/${c.id}`, { replace: true })
+          },
           h("span.settings-nav-icon", {}, icon(c.icon, 20)),
           h("span", {}, c.label)
         )
@@ -525,7 +663,20 @@ export function renderSettings([initial] = []) {
     );
     const page = PAGES[target];
     if (page) {
-      fill(content, h("div.settings-heading-row", {}, h("button.set-back", { type: "button", "aria-label": "Back", onclick: () => back(`profile/${page.parent}`) }, icon("back", 24)), h("h2.settings-heading", {}, page.title)), ...pageBody(page, ctx));
+      fill(
+        content,
+        h(
+          "div.settings-heading-row",
+          {},
+          h(
+            "button.set-back",
+            { type: "button", "aria-label": "Back", onclick: () => back(`profile/${page.parent}`) },
+            icon("back", 24)
+          ),
+          h("h2.settings-heading", {}, page.title)
+        ),
+        ...pageBody(page, ctx)
+      );
     } else {
       fill(content, h("h2.settings-heading", {}, category.label), ...categoryBody(category, ctx));
     }

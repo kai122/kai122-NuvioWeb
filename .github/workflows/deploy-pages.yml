@@ -58,7 +58,13 @@ jobs:
 
       # The touch-first iPad app lives in app/ and is served at /app/.
       - name: Add the touch app
-        run: cp -r app dist/app
+        env:
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+        run: |
+          cp -r app dist/app
+          # The touch app reads its TMDB key from env.js. Like the classic
+          # app's nuvio.env.js, this ends up in the public site.
+          node -e 'process.stdout.write("window.NUVIO_TOUCH_ENV = " + JSON.stringify({ tmdbKey: process.env.TMDB_API_KEY || "" }) + ";\n")' > dist/app/env.js
 
       - uses: actions/configure-pages@v5
 

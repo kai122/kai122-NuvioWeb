@@ -1,7 +1,11 @@
-import { h, icon, img } from "../dom.js";
+import { h, icon, img, fill } from "../dom.js";
 import { openSheet, toast } from "../sheet.js";
 import { navigate, back } from "../router.js";
-import { createStreamList } from "../streamlist.js";
+import { createStreamList, autoPick, choiceFor } from "../streamlist.js";
+import { store } from "../store.js";
+import { pref } from "../prefs.js";
+
+const LINK_REUSE_MS = 48 * 3600 * 1000;
 
 const PLAYBACK_KEY = "nuvioTouch.playback";
 const STREAMS_KEY = "nuvioTouch.streams";
@@ -28,6 +32,18 @@ let pendingStreams = null;
 // replace: true swaps the current page (the stream picker) for the player,
 // so leaving the player returns to the details page like the native app.
 export function startPlayback(playback, { replace = false } = {}) {
+  if (playback.videoId && playback.url) {
+    store.saveLink(playback.videoId, {
+      url: playback.url,
+      streamTitle: playback.streamTitle,
+      addonName: playback.addonName,
+      bingeGroup: playback.bingeGroup || ""
+    });
+  }
+  if (pref("pb.playerPref", "internal") === "external") {
+    openExternalSheet(playback.url, playback.name || "Play with");
+    return;
+  }
   pendingPlayback = playback;
   remember(PLAYBACK_KEY, playback);
   navigate("play", { replace });
@@ -81,15 +97,25 @@ export function openExternalSheet(url, title = "Play with") {
 }
 
 // context: { type, metaId, videoId, name, poster, background, logo, season, episode, episodeTitle, thumbnail, year }
-export function openStreams(context) {
+// Reuse Last Link: replay the stream that worked last time for this title.
+export function openStreams(context, { replace = false } = {}) {
+  if (pref("pb.reuseLink", false)) {
+    const link = store.lastLink(context.videoId);
+    if (link?.url && Date.now() - link.savedAt < LINK_REUSE_MS) {
+      startPlayback({ ...context, ...link }, { replace });
+      return;
+    }
+  }
   pendingStreams = context;
   remember(STREAMS_KEY, context);
-  navigate("streams");
+  navigate("streams", { replace });
 }
 
 export function renderStreams() {
   const context = pendingStreams || recall(STREAMS_KEY);
-  const root = h("div.screen.screen-streams");
+  const root = h("div.screen.screen-streams", {
+    class: `bg-${pref("streams.background", "cinematic")}`
+  });
   if (!context) {
     queueMicrotask(() => back());
     return { el: root };
@@ -110,11 +136,72 @@ export function renderStreams() {
   const subtitle = context.season
     ? `S${context.season} E${context.episode}${context.episodeTitle ? ` · ${context.episodeTitle}` : ""}`
     : "";
+  // Auto Stream Selection: first source, or the first that matches a regex.
+  // context.bingeGroup (from the player's next episode) is tried first.
+  const mode = pref("pb.autoMode", "manual");
+  let lastGroups = [];
+  const timeout = Number(pref("pb.timeout", 5));
+  const auto = mode !== "manual" || !!context.bingeGroup;
+  let decided = !auto;
+  const banner = h("div.streams-auto.is-hidden");
+  const startedAt = Date.now();
+  let timer = null;
+  const play = (choice) => {
+    decided = true;
+    clearTimeout(timer);
+    startPlayback({ ...context, ...choice, stream: undefined }, { replace: true });
+  };
+  const tryAuto = (groups, done) => {
+    if (decided) return;
+    const pick = autoPick(groups, {
+      mode,
+      pattern: pref("pb.autoRegex", ""),
+      bingeGroup: context.bingeGroup
+    });
+    const waited = (Date.now() - startedAt) / 1000;
+    const ready = pick && (timeout === 0 || done || (timeout > 0 && waited >= timeout));
+    if (ready) {
+      toast(`Playing ${pick.addon.manifest.name}`);
+      play(choiceFor(pick));
+    } else if (done) {
+      decided = true;
+      banner.classList.add("is-hidden");
+      if (auto) toast(mode === "regex" ? "No stream matched your pattern" : "Pick a stream");
+    }
+  };
   const list = createStreamList(context, {
-    onPlay: (choice) =>
-      startPlayback({ ...context, ...choice, stream: undefined }, { replace: true }),
-    onExternal: (url) => openExternalSheet(url)
+    onPlay: play,
+    onExternal: (url) => openExternalSheet(url),
+    onUpdate: (groups, done) => {
+      lastGroups = groups;
+      tryAuto(groups, done);
+    }
   });
+  if (auto) {
+    fill(
+      banner,
+      h("span.spinner"),
+      h(
+        "span",
+        {},
+        mode === "regex" ? "Looking for a matching stream…" : "Choosing a stream for you…"
+      ),
+      h(
+        "button.link-button",
+        {
+          type: "button",
+          onclick: () => {
+            decided = true;
+            clearTimeout(timer);
+            banner.classList.add("is-hidden");
+          }
+        },
+        "Choose myself"
+      )
+    );
+    banner.classList.remove("is-hidden");
+    if (timeout > 0) timer = setTimeout(() => tryAuto(lastGroups, false), timeout * 1000 + 50);
+  }
   root.append(
     backdrop,
     h(
@@ -123,9 +210,15 @@ export function renderStreams() {
       icon("back", 26)
     ),
     h("div.streams-brand", {}, brand, subtitle ? h("div.streams-episode", {}, subtitle) : null),
-    h("aside.streams-panel.glass-panel", {}, list.el)
+    h("aside.streams-panel.glass-panel", {}, banner, list.el)
   );
-  return { el: root };
+  return {
+    el: root,
+    destroy() {
+      decided = true;
+      clearTimeout(timer);
+    }
+  };
 }
 
 // Continue Watching: replay the stream that was playing, from where it stopped.

@@ -40,7 +40,8 @@ export function allPrefs() {
   const out = {};
   try {
     for (const name of Object.keys(localStorage)) {
-      if (name.startsWith(PREFIX)) out[name.slice(PREFIX.length)] = JSON.parse(localStorage.getItem(name));
+      if (name.startsWith(PREFIX))
+        out[name.slice(PREFIX.length)] = JSON.parse(localStorage.getItem(name));
     }
   } catch (_) {
     /* ignore */
@@ -77,10 +78,15 @@ export function applyDisplayPrefs() {
   root.style.setProperty("--poster-r", `${Number.isFinite(radius) ? radius : 12}px`);
   root.classList.toggle("hide-poster-labels", !!pref("poster.hideLabels", false));
   root.classList.toggle("no-glass", !pref("liquidGlass", true));
-  root.classList.toggle("hide-addon-logo", !pref("streams.addonLogo", false));
-  root.classList.toggle("hide-size-badges", !pref("streams.sizeBadges", true));
+  const depth = !!pref("depth.on", false);
+  root.classList.toggle("depth-on", depth);
+  const edge = { subtle: 0.1, balanced: 0.18, bold: 0.32 }[pref("depth.edge", "balanced")] ?? 0.18;
+  const sheen = { off: 0, soft: 0.07, bright: 0.16 }[pref("depth.sheen", "soft")] ?? 0.07;
+  root.style.setProperty("--depth-edge", String(edge));
+  root.style.setProperty("--depth-sheen", String(sheen));
 
-  const theme = THEMES.find((t) => t.id === pref("theme", "White")) || THEMES.find((t) => t.id === "White");
+  const theme =
+    THEMES.find((t) => t.id === pref("theme", "White")) || THEMES.find((t) => t.id === "White");
   const amoled = !!pref("amoled", false);
   if (theme) {
     root.style.setProperty("--bg", amoled ? "#000000" : theme.bg);

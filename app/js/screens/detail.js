@@ -1,17 +1,25 @@
-import { h, icon, img, fill } from "../dom.js";
+import { h, icon, img, fill, safeImageUrl, prefersReducedMotion } from "../dom.js";
 import { fetchMeta } from "../addons.js";
 import { store } from "../store.js";
-import { back } from "../router.js";
+import { back, navigate } from "../router.js";
 import { toast } from "../sheet.js";
+import { pref } from "../prefs.js";
 import { openStreams } from "./streams.js";
+import { enrichMeta, seasonDetails, imdbIdFor } from "../services/tmdb.js";
+import { fetchRatings } from "../services/mdblist.js";
+import { takePosterTransition } from "../components.js";
+
+const TMDB_WAIT_MS = 4000;
+const TRAILER_DELAY_MS = 2500;
 
 function list(value) {
   if (!value) return [];
   return Array.isArray(value)
-    ? value
+    ? value.filter(Boolean)
     : String(value)
         .split(",")
-        .map((v) => v.trim());
+        .map((v) => v.trim())
+        .filter(Boolean);
 }
 
 function formatDate(value) {
@@ -21,7 +29,12 @@ function formatDate(value) {
     : date.toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
 }
 
-function episodeContext(meta, video) {
+export function isReleased(video) {
+  const date = new Date(video?.released || video?.firstAired || "");
+  return Number.isNaN(date.getTime()) || date.getTime() <= Date.now();
+}
+
+export function episodeContext(meta, video) {
   return {
     type: meta.type,
     metaId: meta.id,
@@ -31,6 +44,8 @@ function episodeContext(meta, video) {
     background: meta.background,
     logo: meta.logo,
     year: meta.year,
+    description: meta.description || "",
+    certification: meta.certification || "",
     season: video?.season,
     episode: video?.episode ?? video?.number,
     episodeTitle: video ? video.title || video.name || "" : "",
@@ -38,27 +53,73 @@ function episodeContext(meta, video) {
   };
 }
 
-function seriesEpisodes(meta) {
+export function seriesEpisodes(meta) {
   return (meta.videos || [])
-    .filter((v) => Number(v.season) >= 0)
+    .filter((v) => v && v.id && Number(v.season) >= 0)
     .map((v) => ({ ...v, season: Number(v.season), episode: Number(v.episode ?? v.number) }))
     .sort((a, b) => a.season - b.season || a.episode - b.episode);
 }
 
-// First episode not watched yet, or one with saved progress.
+// First episode with saved progress, else the first unwatched one.
 function nextEpisode(meta, episodes) {
   const progress = store.progressMap();
   const resume = episodes.find((v) => progress[v.id]);
   if (resume) return resume;
   const watched = store.watchedSet();
   return (
-    episodes.find((v) => v.season > 0 && !watched.has(v.id)) ||
+    episodes.find((v) => v.season > 0 && !watched.has(v.id) && isReleased(v)) ||
     episodes.find((v) => v.season > 0) ||
-    episodes[0]
+    episodes[0] ||
+    null
   );
 }
 
-function metaLine(meta, episodes) {
+function ratingChips(meta, external) {
+  const chips = [];
+  if (meta.imdbRating)
+    chips.push(
+      h(
+        "span.imdb-chip",
+        {},
+        h("span.imdb-mark", {}, "IMDb"),
+        h("span.imdb-score", {}, meta.imdbRating)
+      )
+    );
+  for (const r of external) {
+    if (r.source === "imdb") {
+      if (!meta.imdbRating)
+        chips.push(
+          h(
+            "span.imdb-chip",
+            {},
+            h("span.imdb-mark", {}, "IMDb"),
+            h("span.imdb-score", {}, r.value)
+          )
+        );
+      continue;
+    }
+    chips.push(
+      h(
+        "span.rating-chip",
+        {},
+        h("span.rating-source", {}, r.label),
+        h("span.rating-value", {}, r.value)
+      )
+    );
+  }
+  if (!chips.length && meta.tmdbRating)
+    chips.push(
+      h(
+        "span.rating-chip",
+        {},
+        h("span.rating-source", {}, "TMDB"),
+        h("span.rating-value", {}, meta.tmdbRating)
+      )
+    );
+  return chips;
+}
+
+function metaLine(meta, episodes, ratingsSlot) {
   const seasons = new Set(episodes.filter((v) => v.season > 0).map((v) => v.season)).size;
   return h(
     "div.detail-meta",
@@ -75,24 +136,37 @@ function metaLine(meta, episodes) {
       : null,
     meta.runtime ? h("span", {}, meta.runtime) : null,
     meta.certification ? h("span.cert-box", {}, meta.certification) : null,
-    meta.imdbRating
-      ? h(
-          "span.imdb-chip",
-          {},
-          h("span.imdb-mark", {}, "IMDb"),
-          h("span.imdb-score", {}, meta.imdbRating)
-        )
-      : null
+    ratingsSlot
   );
 }
 
-function episodeCard(meta, video) {
+function episodeCard(meta, video, tmdbExtra) {
+  const extra = tmdbExtra?.get(video.episode) || {};
   const watched = store.isWatched(video.id);
   const progress = store.progressMap()[video.id];
+  const title = extra.title || video.title || video.name || `Episode ${video.episode}`;
+  const overview = extra.overview || video.overview || video.description;
+  const thumb = video.thumbnail || extra.thumbnail || meta.background;
+  const runtime = video.runtime || extra.runtime;
+  const rating = video.rating || extra.rating;
+  const released = video.released || extra.released;
+  const blur = pref("meta.blurUnwatched", false) && !watched && !progress;
+  const upcoming = !isReleased({ released });
   return h(
     "button.episode-card",
-    { type: "button", onclick: () => openStreams(episodeContext(meta, video)) },
-    img(video.thumbnail || meta.background, "episode-img", ""),
+    {
+      type: "button",
+      class: `${blur ? "is-blurred" : ""} ${upcoming ? "is-upcoming" : ""}`,
+      onclick: () =>
+        openStreams(
+          episodeContext(meta, {
+            ...video,
+            title,
+            thumbnail: thumb === meta.background ? "" : thumb
+          })
+        )
+    },
+    h("span.episode-thumb", {}, img(thumb, "episode-img", "")),
     h("span.episode-shade"),
     h(
       "span.episode-copy",
@@ -101,18 +175,17 @@ function episodeCard(meta, video) {
         "span.episode-chip",
         {},
         `S${video.season} E${video.episode}`,
-        watched ? h("span.episode-watched", {}, " ✓") : null
+        watched ? h("span.episode-watched", {}, " ✓") : null,
+        upcoming ? h("span.episode-soon", {}, " · Upcoming") : null
       ),
-      h("span.episode-title", {}, video.title || video.name || `Episode ${video.episode}`),
-      video.overview || video.description
-        ? h("span.episode-desc", {}, video.overview || video.description)
-        : null,
+      h("span.episode-title", {}, title),
+      overview ? h("span.episode-desc", {}, overview) : null,
       h(
         "span.episode-foot",
         {},
-        video.runtime ? h("span", {}, video.runtime) : null,
-        video.rating ? h("span.episode-rating", {}, `★ ${video.rating}`) : null,
-        video.released ? h("span.episode-date", {}, formatDate(video.released)) : null
+        runtime ? h("span", {}, runtime) : null,
+        rating ? h("span.episode-rating", {}, `★ ${rating}`) : null,
+        released ? h("span.episode-date", {}, formatDate(released)) : null
       )
     ),
     progress
@@ -132,34 +205,73 @@ function seasonsBlock(meta, episodes, initialSeason) {
     (a, b) => (a === 0) - (b === 0) || a - b
   );
   if (!seasons.length) return null;
+  const layout = pref("meta.episodeCards", "horizontal") === "list" ? "is-list" : "is-row";
   const tabs = h("div.season-tabs");
   const count = h("div.episode-count");
-  const track = h("div.row-track.episode-track");
-  const select = (season) => {
+  const track = h("div.episode-track", {
+    class: layout === "is-row" ? "row-track" : "episode-list"
+  });
+  let active = null;
+  const select = async (season) => {
+    active = season;
     tabs
       .querySelectorAll(".season-tab")
       .forEach((tab) => tab.classList.toggle("is-selected", Number(tab.dataset.season) === season));
     const items = episodes.filter((v) => v.season === season);
     count.textContent = `${items.length} episode${items.length === 1 ? "" : "s"}`;
-    fill(track, ...items.map((video) => episodeCard(meta, video)));
+    fill(track, ...items.map((video) => episodeCard(meta, video, null)));
     track.scrollLeft = 0;
+    if (!meta.tmdbId) return;
+    try {
+      const extra = await seasonDetails(meta.tmdbId, season);
+      if (extra && active === season)
+        fill(track, ...items.map((video) => episodeCard(meta, video, extra)));
+    } catch (_) {
+      /* keep the add-on's episode data */
+    }
   };
-  seasons.forEach((season) =>
+  seasons.forEach((season) => {
+    const poster = meta.seasonPosters?.[season];
     tabs.append(
       h(
         "button.season-tab",
-        { type: "button", dataset: { season }, onclick: () => select(season) },
-        season === 0 ? "Specials" : `Season ${season}`
+        {
+          type: "button",
+          class: poster ? "has-poster" : "",
+          dataset: { season },
+          onclick: () => select(season)
+        },
+        poster ? img(poster, "season-poster", "") : null,
+        h("span", {}, season === 0 ? "Specials" : `Season ${season}`)
       )
-    )
-  );
+    );
+  });
   select(seasons.includes(initialSeason) ? initialSeason : seasons[0]);
-  return h("section.detail-section", {}, h("h2.section-title", {}, "Episodes"), tabs, count, track);
+  return h(
+    "section.detail-section",
+    { class: layout },
+    h("h2.section-title", {}, "Episodes"),
+    tabs,
+    count,
+    track
+  );
+}
+
+function initials(name) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("");
 }
 
 function castBlock(meta) {
-  const cast = list(meta.cast).slice(0, 20);
-  if (!cast.length) return null;
+  const people = meta.castFull?.length
+    ? meta.castFull
+    : list(meta.cast)
+        .slice(0, 20)
+        .map((name) => ({ name, character: "", photo: "" }));
+  if (!people.length) return null;
   return h(
     "section.detail-section",
     {},
@@ -167,20 +279,81 @@ function castBlock(meta) {
     h(
       "div.row-track.cast-track",
       {},
-      cast.map((name) =>
+      people.map((person) =>
         h(
           "div.cast-card",
           {},
           h(
             "div.cast-photo",
             {},
-            name
-              .split(/\s+/)
-              .map((part) => part[0])
-              .slice(0, 2)
-              .join("")
+            person.photo ? img(person.photo, "cast-img", "") : null,
+            h("span.cast-initials", {}, initials(person.name))
           ),
-          h("div.cast-name", {}, name)
+          h("div.cast-name", {}, person.name),
+          person.character ? h("div.cast-role", {}, person.character) : null
+        )
+      )
+    )
+  );
+}
+
+function logosBlock(title, entries) {
+  if (!entries?.length) return null;
+  return h(
+    "section.detail-section",
+    {},
+    h("h2.section-title", {}, title),
+    h(
+      "div.row-track.company-track",
+      {},
+      entries.map((entry) =>
+        h(
+          "div.company-card",
+          { title: entry.name },
+          entry.logo
+            ? img(entry.logo, "company-logo", entry.name)
+            : h("span.company-name", {}, entry.name)
+        )
+      )
+    )
+  );
+}
+
+// TMDB titles: find the IMDb id so the user's add-ons can provide streams.
+async function openTmdbTitle(item) {
+  try {
+    const imdb = await imdbIdFor(item.type, item.tmdbId);
+    if (imdb) {
+      navigate(`detail/${item.type}/${encodeURIComponent(imdb)}`);
+      return;
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  toast("This title isn't available from your add-ons");
+}
+
+function tmdbRow(title, items) {
+  if (!items?.length) return null;
+  return h(
+    "section.detail-section",
+    {},
+    h("h2.section-title", {}, title),
+    h(
+      "div.row-track",
+      {},
+      items.map((item) =>
+        h(
+          "button.poster-card",
+          { type: "button", "aria-label": item.name, onclick: () => openTmdbTitle(item) },
+          h(
+            "div.poster-frame",
+            {},
+            img(item.poster, "poster-img", ""),
+            h("span.poster-fallback", {}, item.name)
+          ),
+          h("div.poster-title", {}, item.name),
+          h("div.poster-year", {}, item.year || "")
         )
       )
     )
@@ -189,8 +362,10 @@ function castBlock(meta) {
 
 function detailsBlock(meta) {
   const rows = [
-    ["Release Info", meta.releaseInfo],
+    ["Release Info", meta.released ? formatDate(meta.released) : meta.releaseInfo],
+    ["Status", meta.status],
     ["Runtime", meta.runtime],
+    ["Created by", list(meta.creators).join(", ")],
     ["Country", list(meta.country).join(", ")],
     ["Language", list(meta.language).join(", ")],
     ["Writers", list(meta.writer).slice(0, 3).join(", ")],
@@ -216,8 +391,73 @@ function detailsBlock(meta) {
   );
 }
 
+// "Dominant Color": average the backdrop. Only works when the image host
+// allows it (CORS); otherwise the page keeps the cinematic look.
+function applyDominantColor(url, root) {
+  const safe = safeImageUrl(url);
+  if (!safe) return;
+  const probe = new Image();
+  probe.crossOrigin = "anonymous";
+  probe.decoding = "async";
+  probe.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 24;
+      canvas.height = 14;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(probe, 0, 0, 24, 14);
+      const data = ctx.getImageData(0, 0, 24, 14).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      const n = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+      }
+      const dim = (v) => Math.round((v / n) * 0.45);
+      root.style.setProperty("--detail-tint", `rgb(${dim(r)}, ${dim(g)}, ${dim(b)})`);
+      root.classList.add("has-tint");
+    } catch (_) {
+      /* tainted canvas: keep cinematic */
+    }
+  };
+  probe.src = safe;
+}
+
+function trailerPreview(backdrop, ytId) {
+  if (!ytId || prefersReducedMotion()) return null;
+  const timer = setTimeout(() => {
+    const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytId)}?autoplay=1&mute=1&controls=0&loop=1&playlist=${encodeURIComponent(ytId)}&playsinline=1&modestbranding=1&rel=0`;
+    const frame = h("iframe.detail-trailer", {
+      src,
+      title: "Trailer preview",
+      allow: "autoplay; encrypted-media",
+      referrerpolicy: "strict-origin-when-cross-origin",
+      sandbox: "allow-scripts allow-same-origin",
+      tabindex: "-1"
+    });
+    frame.addEventListener(
+      "load",
+      () => setTimeout(() => frame.classList.add("is-playing"), 1200),
+      { once: true }
+    );
+    backdrop.append(frame);
+  }, TRAILER_DELAY_MS);
+  return () => clearTimeout(timer);
+}
+
+function withTimeout(promise, ms, fallback) {
+  return Promise.race([
+    promise.catch(() => fallback),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
+  ]);
+}
+
 export function renderDetail([type, rawId]) {
-  const id = decodeURIComponent(rawId || "");
+  const id = String(rawId || "");
+  const background = pref("meta.background", "cinematic");
   const backdrop = h("div.detail-backdrop");
   const topbar = h(
     "div.detail-topbar",
@@ -231,14 +471,26 @@ export function renderDetail([type, rawId]) {
     h("span.detail-topbar-spacer")
   );
   const body = h("div.detail-body", {}, h("div.detail-loading", {}, h("span.spinner")));
-  const root = h("div.screen.screen-detail", {}, backdrop, topbar, body);
+  const root = h("div.screen.screen-detail", { class: `bg-${background}` }, backdrop, topbar, body);
+  let stopTrailer = null;
+  let alive = true;
+
+  // Poster transition: the tapped poster grows into the backdrop.
+  const transitionPoster = takePosterTransition();
+  if (transitionPoster) {
+    const ghost = img(transitionPoster, "detail-backdrop-img is-poster-ghost", "");
+    ghost.loading = "eager";
+    backdrop.append(ghost);
+  }
 
   const onScroll = () =>
     topbar.classList.toggle("is-solid", window.scrollY > window.innerHeight * 0.32);
   window.addEventListener("scroll", onScroll, { passive: true });
 
-  fetchMeta(type, id).then((meta) => {
-    if (!meta) {
+  (async () => {
+    const base = await fetchMeta(type, id);
+    if (!alive) return;
+    if (!base) {
       fill(
         body,
         h(
@@ -251,11 +503,25 @@ export function renderDetail([type, rawId]) {
       );
       return;
     }
+    const meta = await withTimeout(enrichMeta(base), TMDB_WAIT_MS, base);
+    if (!alive) return;
+    render(meta);
+  })();
+
+  function render(meta) {
     if (meta.background) {
       const bg = img(meta.background, "detail-backdrop-img", "");
       bg.loading = "eager";
-      bg.addEventListener("load", () => bg.classList.add("is-loaded"), { once: true });
+      bg.addEventListener(
+        "load",
+        () => {
+          bg.classList.add("is-loaded");
+          backdrop.querySelector(".is-poster-ghost")?.classList.add("is-gone");
+        },
+        { once: true }
+      );
       backdrop.append(bg);
+      if (background === "dominant") applyDominantColor(meta.background, root);
     }
     const episodes = meta.type === "series" ? seriesEpisodes(meta) : [];
     const next = meta.type === "series" ? nextEpisode(meta, episodes) : null;
@@ -304,23 +570,53 @@ export function renderDetail([type, rawId]) {
     });
     syncWatched();
 
-    const trailer = (meta.trailerStreams || meta.trailers || []).find((t) => t.ytId || t.source);
-    const trailerButton = trailer
+    const addonTrailer = (meta.trailerStreams || meta.trailers || []).find(
+      (t) => t && (t.ytId || t.source)
+    );
+    const ytId = meta.trailers?.[0]?.ytId || addonTrailer?.ytId || addonTrailer?.source || "";
+    const trailerButton = /^[\w-]{6,20}$/.test(ytId)
       ? h(
           "button.round-button",
           {
             type: "button",
-            "aria-label": "Trailer",
+            "aria-label": "Watch trailer",
             onclick: () =>
               window.open(
-                `https://www.youtube.com/watch?v=${encodeURIComponent(trailer.ytId || trailer.source)}`,
+                `https://www.youtube.com/watch?v=${encodeURIComponent(ytId)}`,
                 "_blank",
                 "noopener"
               )
           },
-          icon("external", 22)
+          icon("movie", 22)
         )
       : null;
+    if (trailerButton && pref("meta.heroTrailer", false))
+      stopTrailer = trailerPreview(backdrop, ytId);
+
+    const shuffleButton =
+      meta.type === "series" &&
+      pref("meta.shuffle", true) &&
+      episodes.some((v) => v.season > 0 && isReleased(v))
+        ? h(
+            "button.round-button",
+            {
+              type: "button",
+              "aria-label": "Play a random episode",
+              onclick: () => {
+                const pool = episodes.filter((v) => v.season > 0 && isReleased(v));
+                const pick = pool[Math.floor(Math.random() * pool.length)];
+                toast(`Shuffle: S${pick.season} E${pick.episode}`);
+                openStreams(episodeContext(meta, pick));
+              }
+            },
+            icon("shuffle", 22)
+          )
+        : null;
+
+    const ratingsSlot = h("span.detail-ratings", {}, ratingChips(meta, []));
+    fetchRatings(meta.type, meta.id).then((external) => {
+      if (external.length) fill(ratingsSlot, ratingChips(meta, external));
+    });
 
     const genres = list(meta.genres || meta.genre);
     const directors = list(meta.director);
@@ -328,7 +624,7 @@ export function renderDetail([type, rawId]) {
       "div.detail-intro",
       {},
       h("div.detail-logo-slot", {}, logoEl),
-      metaLine(meta, episodes),
+      metaLine(meta, episodes, ratingsSlot),
       genres.length ? h("div.detail-genres", {}, genres.join(" • ")) : null,
       directors.length
         ? h(
@@ -349,6 +645,7 @@ export function renderDetail([type, rawId]) {
           h("span", {}, playLabel)
         ),
         trailerButton,
+        shuffleButton,
         watchedButton,
         savedButton
       )
@@ -358,13 +655,19 @@ export function renderDetail([type, rawId]) {
       intro,
       meta.type === "series" ? seasonsBlock(meta, episodes, next?.season) : null,
       castBlock(meta),
+      meta.collection ? tmdbRow(meta.collection.name, meta.collection.parts) : null,
+      tmdbRow("More Like This", meta.recommendations),
+      logosBlock("Networks", meta.networks),
+      logosBlock("Production", meta.companies),
       detailsBlock(meta)
     );
-  });
+  }
 
   return {
     el: root,
     destroy() {
+      alive = false;
+      stopTrailer?.();
       window.removeEventListener("scroll", onScroll);
     }
   };

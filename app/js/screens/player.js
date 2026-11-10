@@ -1,12 +1,20 @@
-import { h, icon, safeHttpUrl, fill } from "../dom.js";
+import { h, icon, safeHttpUrl, fill, img } from "../dom.js";
 import { back } from "../router.js";
 import { store } from "../store.js";
 import { toast } from "../sheet.js";
-import { pref } from "../prefs.js";
-import { fetchSubtitles } from "../addons.js";
+import { pref, setPref } from "../prefs.js";
+import { fetchSubtitles, fetchMeta, preloadStreams } from "../addons.js";
+import { PAGES } from "../settings/schema.js";
+import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { createStreamList } from "../streamlist.js";
-import { parseSubtitles, findCue, languageName } from "../subtitles.js";
-import { takePlayback, externalPlayerLinks, copyLink, openExternalSheet } from "./streams.js";
+import { parseSubtitles, findCue, languageName, stripSdh } from "../subtitles.js";
+import {
+  takePlayback,
+  externalPlayerLinks,
+  copyLink,
+  openExternalSheet,
+  openStreams
+} from "./streams.js";
 
 const SAVE_EVERY_MS = 5000;
 const HIDE_AFTER_MS = 3500;
@@ -16,9 +24,14 @@ const FITS = [
   { value: "cover", label: "Fill" },
   { value: "fill", label: "Stretch" }
 ];
-const SUB_COLORS = ["#ffffff", "#ffd84d", "#4de3ff", "#ff6b81", "#22d37c", "#b75aff", "#ff8a3d"];
-const SUB_STYLE_KEY = "nuvioTouch.subtitleStyle";
+const SUB_COLORS = PAGES["pb.subs"].rows.find((r) => r.pref === "subs.color").opts.map((o) => o.v);
 const SUB_LANG_KEY = "nuvioTouch.subtitleLanguage";
+const LAST_PLAYER_KEY = "nuvioTouch.lastPlayer";
+const BASE_SUB_PX = 30;
+const PAUSE_OVERLAY_MS = 5000;
+const NEXT_COUNTDOWN_S = 10;
+const HOLD_MS = 450;
+const HOLD_RATE = 2;
 
 function readJSON(key, fallback) {
   try {
@@ -75,7 +88,16 @@ export function renderPlayer() {
   const subtitleText = h("div.player-subtitle", { "aria-live": "off" });
   const scrim = h("div.player-scrim");
   const spinner = h("div.player-buffering", {}, h("span.spinner"));
+  const setLoading = (text) => {
+    loadingText.textContent = pref("pb.loadingStatus", true) ? text : "";
+  };
   const errorBox = h("div.player-error.is-hidden");
+  const loadingText = h("div.player-loading-text");
+  const speedBadge = h("div.player-speed-badge", {}, `${HOLD_RATE}×`, icon("skipNext", 18));
+  const seekBadge = h("div.player-seek-badge");
+  const ratingBadge = h("div.player-rating-badge");
+  const pauseOverlay = h("div.player-pause-overlay");
+  const nextCard = h("div.player-next");
   const panelHost = h("div.player-panel-host");
 
   // --- Top right: picture-in-picture, lock, back -----------------------------
@@ -165,7 +187,22 @@ export function renderPlayer() {
     icon("lock", 20),
     h("span", {}, "Tap to unlock")
   );
-  root.append(video, subtitleText, scrim, chrome, spinner, errorBox, unlockButton, panelHost);
+  spinner.append(loadingText);
+  root.append(
+    video,
+    subtitleText,
+    scrim,
+    pauseOverlay,
+    ratingBadge,
+    speedBadge,
+    seekBadge,
+    chrome,
+    nextCard,
+    spinner,
+    errorBox,
+    unlockButton,
+    panelHost
+  );
 
   // --- State ------------------------------------------------------------------
   const saved = store.progressMap()[playback.videoId];
@@ -178,15 +215,18 @@ export function renderPlayer() {
   let cues = [];
   let activeSubtitle = null;
   let nativeTrack = null;
-  // Defaults come from Settings > Media > Playback > Subtitles; the in-player
-  // panel can still override them for this device.
-  const subStyle = readJSON(SUB_STYLE_KEY, {
-    size: Math.round(30 * (Number(pref("subs.size", 100)) / 100)),
-    color: pref("subs.color", "#ffffff"),
-    background: Number(pref("subs.bgOpacity", 0)) / 100,
-    bold: !!pref("subs.bold", false)
-  });
+  // Subtitle style lives in Settings > Media > Playback > Subtitles. The
+  // in-player panel edits the same settings.
   let subDelay = 0;
+  let meta = null; // full series/movie metadata, loaded in the background
+  let nextVideo = null;
+  let nextShown = false;
+  let nextDismissed = false;
+  let nextTimer = null;
+  let preloaded = false;
+  let finished = false;
+  let pauseTimer = null;
+  let ratingShown = false;
 
   function renderToolbar() {
     const tool = (name, label, onClick, active = false) =>
@@ -199,6 +239,7 @@ export function renderPlayer() {
       tool("speed", "Playback speed", openSpeed, video.playbackRate !== 1),
       tool("aspect", "Aspect ratio", cycleFit, fitIndex !== 0),
       tool("cc", "Subtitles", openSubtitlesPanel, Boolean(activeSubtitle)),
+      audioTracks().length > 1 ? tool("audio", "Audio", openAudio) : null,
       tool("layers", "Sources", openSources)
     ];
     if (expanded) {
@@ -220,15 +261,20 @@ export function renderPlayer() {
         }
       )
     );
-    fill(toolbar, ...items);
+    fill(toolbar, ...items.filter(Boolean));
   }
 
   function applySubtitleStyle() {
-    subtitleText.style.fontSize = `${subStyle.size}px`;
-    subtitleText.style.color = subStyle.color;
-    subtitleText.style.fontWeight = subStyle.bold ? "700" : "500";
-    subtitleText.style.setProperty("--sub-bg", `rgba(0, 0, 0, ${subStyle.background})`);
-    subtitleText.classList.toggle("has-bg", subStyle.background > 0);
+    const size = Math.round(BASE_SUB_PX * (Number(pref("subs.size", 100)) / 100));
+    const background = Number(pref("subs.bgOpacity", 0)) / 100;
+    subtitleText.style.fontSize = `${size}px`;
+    subtitleText.style.color = pref("subs.color", "#ffffff");
+    subtitleText.style.fontWeight = pref("subs.bold", false) ? "700" : "500";
+    subtitleText.style.setProperty("--sub-bg", `rgba(0, 0, 0, ${background})`);
+    subtitleText.style.setProperty("--sub-offset", `${Number(pref("subs.offset", 20))}px`);
+    subtitleText.classList.toggle("has-bg", background > 0);
+    subtitleText.classList.toggle("has-outline", !!pref("subs.outline", true));
+    subtitleText.classList.toggle("has-shadow", !!pref("subs.shadow", false));
   }
 
   // --- Controls visibility ------------------------------------------------------
@@ -238,6 +284,7 @@ export function renderPlayer() {
 
   function wake() {
     if (locked) return;
+    if (pauseOverlay.classList.contains("is-on")) schedulePauseOverlay();
     showControls(true);
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
@@ -256,8 +303,79 @@ export function renderPlayer() {
     }
   }
 
+  // --- Gestures: tap toggles controls; double-tap the sides skips 10 s;
+  // swipe sideways seeks; press and hold plays at 2x (each can be turned off).
   let lastTap = 0;
+  let gesture = null; // { x, y, startTime, mode: null|"seek"|"hold", holdTimer }
+  let suppressClick = false;
+  scrim.addEventListener("pointerdown", (event) => {
+    if (locked) return;
+    const holdAllowed = pref("pb.holdSpeed", true);
+    gesture = {
+      x: event.clientX,
+      y: event.clientY,
+      startTime: video.currentTime,
+      mode: null,
+      holdTimer: null
+    };
+    if (holdAllowed && !video.paused) {
+      gesture.holdTimer = setTimeout(() => {
+        if (!gesture || gesture.mode) return;
+        gesture.mode = "hold";
+        gesture.rate = video.playbackRate;
+        video.playbackRate = HOLD_RATE;
+        speedBadge.classList.add("is-on");
+        showControls(false);
+      }, HOLD_MS);
+    }
+  });
+  scrim.addEventListener("pointermove", (event) => {
+    if (!gesture || gesture.mode === "hold") return;
+    const dx = event.clientX - gesture.x;
+    const dy = event.clientY - gesture.y;
+    if (
+      !gesture.mode &&
+      Math.abs(dx) > 24 &&
+      Math.abs(dx) > Math.abs(dy) * 1.5 &&
+      pref("pb.gestures", true) &&
+      Number.isFinite(video.duration)
+    ) {
+      gesture.mode = "seek";
+      clearTimeout(gesture.holdTimer);
+    } else if (!gesture.mode && Math.hypot(dx, dy) > 12) {
+      clearTimeout(gesture.holdTimer);
+    }
+    if (gesture.mode === "seek") {
+      // A full-width swipe covers 3 minutes, or the whole video if shorter.
+      const span = Math.min(180, video.duration);
+      const delta = (dx / window.innerWidth) * span;
+      gesture.target = Math.max(0, Math.min(video.duration - 0.5, gesture.startTime + delta));
+      seekBadge.textContent = `${delta >= 0 ? "+" : "−"}${formatTime(Math.abs(delta))}  ·  ${formatTime(gesture.target)}`;
+      seekBadge.classList.add("is-on");
+    }
+  });
+  const endGesture = () => {
+    if (!gesture) return;
+    clearTimeout(gesture.holdTimer);
+    if (gesture.mode === "hold") {
+      video.playbackRate = gesture.rate || 1;
+      speedBadge.classList.remove("is-on");
+      suppressClick = true;
+    } else if (gesture.mode === "seek") {
+      if (Number.isFinite(gesture.target)) video.currentTime = gesture.target;
+      seekBadge.classList.remove("is-on");
+      suppressClick = true;
+      wake();
+    }
+    gesture = null;
+  };
+  scrim.addEventListener("pointerup", endGesture);
+  scrim.addEventListener("pointercancel", endGesture);
   scrim.addEventListener("click", (event) => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     if (locked) {
       unlockButton.classList.add("is-shown");
       setTimeout(() => unlockButton.classList.remove("is-shown"), 2500);
@@ -265,7 +383,7 @@ export function renderPlayer() {
     }
     const now = Date.now();
     const third = event.clientX / window.innerWidth;
-    if (now - lastTap < 300 && (third < 0.33 || third > 0.67)) {
+    if (pref("pb.gestures", true) && now - lastTap < 300 && (third < 0.33 || third > 0.67)) {
       seekBy(third < 0.33 ? -10 : 10);
       lastTap = 0;
       return;
@@ -325,12 +443,16 @@ export function renderPlayer() {
     if (!force && now - lastSave < SAVE_EVERY_MS) return;
     lastSave = now;
     if (video.currentTime / video.duration >= 0.95) {
+      if (finished) return;
+      finished = true;
       store.removeProgress(playback.videoId);
       store.setWatched(playback.videoId, true);
       if (!playback.season) store.setWatched(playback.metaId, true);
+      else updateNextUp();
       return;
     }
     if (video.currentTime < 5) return;
+    finished = false;
     const { stream, ...entry } = playback;
     store.setProgress({ ...entry, time: video.currentTime, duration: video.duration });
   }
@@ -560,8 +682,13 @@ export function renderPlayer() {
     } else if (activeSubtitle?.kind === "native" && nativeTrack?.activeCues?.length) {
       text = [...nativeTrack.activeCues].map((cue) => cue.text.replace(/<[^>]+>/g, "")).join("\n");
     }
+    if (text && pref("subs.stripSdh", false)) text = stripSdh(text);
     if (subtitleText.textContent !== text) subtitleText.textContent = text;
     subtitleText.classList.toggle("is-empty", !text);
+  }
+
+  function preferredLanguages() {
+    return [pref("subs.lang", ""), pref("subs.lang2", "")].filter(Boolean).map(languageName);
   }
 
   function nativeTracks() {
@@ -603,12 +730,14 @@ export function renderPlayer() {
   }
 
   function subtitleEntries() {
+    const isForced = (text) => /\bforced\b/i.test(String(text || ""));
     const native = nativeTracks().map((track, i) => ({
       kind: "native",
       id: `native-${i}`,
       lang: track.language || "und",
       label: track.label || languageName(track.language),
       source: "Built-in",
+      forced: track.kind === "forced" || isForced(track.label),
       track
     }));
     const addon = subtitles.map((sub, i) => ({
@@ -617,9 +746,15 @@ export function renderPlayer() {
       lang: sub.lang || "und",
       label: languageName(sub.lang),
       source: sub.addonName,
+      forced: isForced(sub.id) || isForced(sub.label),
       url: sub.url
     }));
-    return [...native, ...addon];
+    const all = [...native, ...addon];
+    const wanted = preferredLanguages();
+    if (pref("subs.preferredOnly", false) && wanted.length) {
+      return all.filter((entry) => wanted.includes(languageName(entry.lang)));
+    }
+    return all;
   }
 
   function openSubtitlesPanel() {
@@ -714,13 +849,17 @@ export function renderPlayer() {
       );
     }
 
-    function saveStyle() {
-      writeJSON(SUB_STYLE_KEY, subStyle);
+    function saveStyle(key, value) {
+      setPref(key, value);
       applySubtitleStyle();
       drawStyle();
     }
 
     function drawStyle() {
+      const size = Number(pref("subs.size", 100));
+      const bold = !!pref("subs.bold", false);
+      const currentColor = pref("subs.color", "#ffffff");
+      const bgOpacity = Number(pref("subs.bgOpacity", 0));
       fill(
         styleCol,
         h("div.subs-col-title", {}, "Style"),
@@ -752,28 +891,19 @@ export function renderPlayer() {
         ),
         h("div.subs-label", {}, "Font Size"),
         stepper(
-          `${subStyle.size}`,
-          () => {
-            subStyle.size = Math.max(16, subStyle.size - 2);
-            saveStyle();
-          },
-          () => {
-            subStyle.size = Math.min(60, subStyle.size + 2);
-            saveStyle();
-          }
+          `${size}%`,
+          () => saveStyle("subs.size", Math.max(60, size - 5)),
+          () => saveStyle("subs.size", Math.min(160, size + 5))
         ),
         h("div.subs-label", {}, "Bold"),
         h(
           "button.subs-toggle",
           {
             type: "button",
-            class: subStyle.bold ? "is-on" : "",
-            onclick: () => {
-              subStyle.bold = !subStyle.bold;
-              saveStyle();
-            }
+            class: bold ? "is-on" : "",
+            onclick: () => saveStyle("subs.bold", !bold)
           },
-          subStyle.bold ? "On" : "Off"
+          bold ? "On" : "Off"
         ),
         h("div.subs-label", {}, "Color"),
         h(
@@ -783,26 +913,17 @@ export function renderPlayer() {
             h("button.swatch", {
               type: "button",
               "aria-label": color,
-              class: subStyle.color === color ? "is-selected" : "",
+              class: currentColor === color ? "is-selected" : "",
               style: { background: color },
-              onclick: () => {
-                subStyle.color = color;
-                saveStyle();
-              }
+              onclick: () => saveStyle("subs.color", color)
             })
           )
         ),
         h("div.subs-label", {}, "Background"),
         stepper(
-          `${Math.round(subStyle.background * 100)}%`,
-          () => {
-            subStyle.background = Math.max(0, Math.round((subStyle.background - 0.25) * 100) / 100);
-            saveStyle();
-          },
-          () => {
-            subStyle.background = Math.min(1, Math.round((subStyle.background + 0.25) * 100) / 100);
-            saveStyle();
-          }
+          `${bgOpacity}%`,
+          () => saveStyle("subs.bgOpacity", Math.max(0, bgOpacity - 25)),
+          () => saveStyle("subs.bgOpacity", Math.min(100, bgOpacity + 25))
         )
       );
     }
@@ -836,39 +957,289 @@ export function renderPlayer() {
     } catch (_) {
       subtitles = [];
     }
-    const preferred = pref("subs.lang", "") || readJSON(SUB_LANG_KEY, { lang: "" }).lang;
-    if (preferred && !activeSubtitle) {
-      const match = subtitleEntries().find(
-        (entry) => languageName(entry.lang) === languageName(preferred)
-      );
-      if (match) selectSubtitle(match);
+    if (activeSubtitle) return;
+    const entries = subtitleEntries();
+    const wanted = preferredLanguages();
+    if (!wanted.length) {
+      const last = readJSON(SUB_LANG_KEY, { lang: "" }).lang;
+      if (last) wanted.push(languageName(last));
+    }
+    // "Use Forced Subtitles": when the audio is already in your subtitle
+    // language, only show forced (signs and foreign dialogue) subtitles.
+    if (pref("subs.forced", false) && wanted[0] && audioLanguage() === wanted[0]) {
+      const forced = entries.find((e) => e.forced && languageName(e.lang) === wanted[0]);
+      if (forced) selectSubtitle(forced);
+      return;
+    }
+    for (const lang of wanted) {
+      const match = entries.find((e) => !e.forced && languageName(e.lang) === lang);
+      if (match) {
+        selectSubtitle(match);
+        return;
+      }
     }
   }
 
+  // --- Audio tracks (Safari exposes them for HLS and MP4) ------------------------
+  function audioTracks() {
+    return video.audioTracks ? [...video.audioTracks] : [];
+  }
+
+  function audioLanguage() {
+    const active = audioTracks().find((t) => t.enabled);
+    return active?.language ? languageName(active.language) : "";
+  }
+
+  function selectAudio(track) {
+    for (const t of audioTracks()) t.enabled = t === track;
+    renderToolbar();
+  }
+
+  function applyAudioPreference() {
+    const tracks = audioTracks();
+    if (tracks.length < 2) return;
+    for (const lang of [pref("pb.audioLang", ""), pref("pb.audioLang2", "")].filter(Boolean)) {
+      const match = tracks.find(
+        (t) => t.language && languageName(t.language) === languageName(lang)
+      );
+      if (match) {
+        selectAudio(match);
+        return;
+      }
+    }
+  }
+
+  function openAudio() {
+    const tracks = audioTracks();
+    openPanel(
+      h(
+        "div.player-panel.is-compact",
+        {},
+        panelHeader("Audio"),
+        h(
+          "div.option-list",
+          {},
+          tracks.map((track, i) =>
+            h(
+              "button.option",
+              {
+                type: "button",
+                class: track.enabled ? "is-selected" : "",
+                onclick: () => {
+                  selectAudio(track);
+                  closePanel();
+                }
+              },
+              h(
+                "span",
+                {},
+                track.label || (track.language ? languageName(track.language) : `Track ${i + 1}`)
+              ),
+              track.enabled ? h("span.option-check", { html: "&#10003;" }) : null
+            )
+          )
+        )
+      )
+    );
+  }
+
+  // --- Next episode -----------------------------------------------------------------
+  async function loadMeta() {
+    if (!playback.metaId) return;
+    try {
+      meta = await fetchMeta(playback.type, playback.metaId);
+    } catch (_) {
+      meta = null;
+    }
+    if (!meta) return;
+    if (!playback.description && meta.description && !playback.season)
+      playback.description = meta.description;
+    if (playback.type === "series") {
+      const episodes = seriesEpisodes(meta).filter((v) => v.season > 0);
+      const i = episodes.findIndex((v) => v.id === playback.videoId);
+      nextVideo = i >= 0 ? episodes[i + 1] || null : null;
+      if (nextVideo && !isReleased(nextVideo)) nextVideo = null;
+    }
+  }
+
+  // Next Up after finishing an episode: the episode after the furthest one
+  // watched, or after this one when "Next Up From Furthest Episode" is off.
+  function updateNextUp() {
+    if (!meta) return;
+    const episodes = seriesEpisodes(meta).filter((v) => v.season > 0);
+    let index = episodes.findIndex((v) => v.id === playback.videoId);
+    if (pref("cw.furthest", true)) {
+      const watched = store.watchedSet();
+      episodes.forEach((v, i) => {
+        if (watched.has(v.id) && i > index) index = i;
+      });
+    }
+    const upNext = index >= 0 ? episodes[index + 1] : null;
+    if (!upNext) {
+      store.setNextUp(playback.metaId, null);
+      return;
+    }
+    store.setNextUp(playback.metaId, {
+      ...episodeContext(meta, upNext),
+      released: upNext.released || upNext.firstAired || ""
+    });
+  }
+
+  // When the Next Episode prompt appears (seconds into the video).
+  function thresholdTime() {
+    const d = video.duration;
+    if (!Number.isFinite(d) || d <= 0) return Infinity;
+    if (pref("pb.threshMode", "pct") === "min")
+      return Math.max(0, d - Number(pref("pb.threshMin", 2)) * 60);
+    return d * (Number(pref("pb.threshPct", 95)) / 100);
+  }
+
+  function playNext() {
+    if (!nextVideo || !meta) return;
+    clearInterval(nextTimer);
+    save(true);
+    const context = {
+      ...episodeContext(meta, nextVideo),
+      bingeGroup: pref("pb.binge", true) ? playback.bingeGroup || "" : ""
+    };
+    openStreams(context, { replace: true });
+  }
+
+  function hideNextCard() {
+    nextDismissed = true;
+    clearInterval(nextTimer);
+    nextCard.classList.remove("is-on");
+  }
+
+  function checkNext() {
+    if (!nextVideo || nextDismissed) return;
+    const at = thresholdTime();
+    // Start looking for sources a minute before the prompt.
+    if (!preloaded && pref("pb.preload", false) && video.currentTime >= at - 60) {
+      preloaded = true;
+      preloadStreams(playback.type, nextVideo.id);
+    }
+    if (nextShown || video.currentTime < at) return;
+    nextShown = true;
+    const auto = pref("pb.autoNext", true);
+    let left = NEXT_COUNTDOWN_S;
+    const label = h(
+      "span.player-next-count",
+      {},
+      auto ? `Next episode in ${left}` : "Next episode"
+    );
+    fill(
+      nextCard,
+      nextVideo.thumbnail ? img(nextVideo.thumbnail, "player-next-img", "") : null,
+      h(
+        "div.player-next-copy",
+        {},
+        label,
+        h(
+          "span.player-next-title",
+          {},
+          `S${nextVideo.season} E${nextVideo.episode} · ${nextVideo.title || nextVideo.name || ""}`
+        )
+      ),
+      h("button.player-next-play", { type: "button", onclick: playNext }, icon("play", 20), "Play"),
+      h(
+        "button.player-next-close",
+        { type: "button", "aria-label": "Dismiss", onclick: hideNextCard },
+        icon("close", 18)
+      )
+    );
+    nextCard.classList.add("is-on");
+    if (auto) {
+      nextTimer = setInterval(() => {
+        if (video.paused) return;
+        left -= 1;
+        label.textContent = `Next episode in ${left}`;
+        if (left <= 0) playNext();
+      }, 1000);
+    }
+  }
+
+  // --- Pause overlay and content rating -------------------------------------------
+  function schedulePauseOverlay() {
+    clearTimeout(pauseTimer);
+    pauseOverlay.classList.remove("is-on");
+    if (!video.paused || !pref("pb.pauseOverlay", true)) return;
+    pauseTimer = setTimeout(() => {
+      if (!video.paused || panelHost.firstChild) return;
+      const logo = playback.logo ? img(playback.logo, "player-pause-logo", playback.name) : null;
+      fill(
+        pauseOverlay,
+        h("div.player-pause-kicker", {}, "You're watching"),
+        logo || h("div.player-pause-title", {}, playback.name),
+        subtitleLabel ? h("div.player-pause-sub", {}, subtitleLabel) : null,
+        playback.description && !playback.season
+          ? h("p.player-pause-text", {}, playback.description)
+          : null
+      );
+      logo?.addEventListener(
+        "error",
+        () => logo.replaceWith(h("div.player-pause-title", {}, playback.name)),
+        { once: true }
+      );
+      showControls(false);
+      pauseOverlay.classList.add("is-on");
+    }, PAUSE_OVERLAY_MS);
+  }
+
+  function showRating() {
+    if (ratingShown || !pref("pb.parental", true) || !playback.certification) return;
+    ratingShown = true;
+    fill(
+      ratingBadge,
+      h("span.player-rating-label", {}, "Rated"),
+      h("span.player-rating-value", {}, playback.certification)
+    );
+    ratingBadge.classList.add("is-on");
+    setTimeout(() => ratingBadge.classList.remove("is-on"), 6000);
+  }
+
   // --- Video events ---------------------------------------------------------------
+  let resumed = false;
   video.addEventListener("loadedmetadata", () => {
-    if (saved?.url === playback.url && saved.time > 5 && saved.time < video.duration - 10) {
+    setLoading("Loading video…");
+    // Resume where this movie or episode stopped, whichever source played it.
+    if (!resumed && saved && saved.time > 5 && saved.time < video.duration - 10) {
       video.currentTime = saved.time;
     }
+    resumed = true;
+    applyAudioPreference();
+    renderToolbar();
     syncTime();
   });
   video.addEventListener("timeupdate", () => {
     syncTime();
     save(false);
+    checkNext();
   });
   video.addEventListener("progress", syncTime);
   video.addEventListener("play", () => {
     syncPlayState();
+    schedulePauseOverlay();
     wake();
   });
   video.addEventListener("pause", () => {
     syncPlayState();
     save(true);
+    schedulePauseOverlay();
     wake();
   });
-  video.addEventListener("ended", () => save(true));
-  video.addEventListener("waiting", () => spinner.classList.add("is-on"));
-  video.addEventListener("playing", () => spinner.classList.remove("is-on"));
+  video.addEventListener("ended", () => {
+    save(true);
+    if (nextVideo && !nextDismissed && pref("pb.autoNext", true)) playNext();
+  });
+  video.addEventListener("waiting", () => {
+    setLoading("Buffering…");
+    spinner.classList.add("is-on");
+  });
+  video.addEventListener("playing", () => {
+    spinner.classList.remove("is-on");
+    showRating();
+  });
   video.addEventListener("canplay", () => spinner.classList.remove("is-on"));
   video.addEventListener("ratechange", syncTime);
   video.addEventListener("error", () => {
@@ -929,21 +1300,42 @@ export function renderPlayer() {
   }
 
   applySubtitleStyle();
+  const onPrefChange = (event) => {
+    if (String(event.detail?.key || "").startsWith("subs.") || event.detail?.key === "*")
+      applySubtitleStyle();
+  };
+  window.addEventListener("nuvio:pref", onPrefChange);
   renderToolbar();
   syncPlayState();
+  setLoading("Connecting to the stream…");
   spinner.classList.add("is-on");
+  writeJSON(LAST_PLAYER_KEY, {
+    ...playback,
+    stream: undefined,
+    profileId: store.activeProfileId,
+    at: Date.now()
+  });
   video.src = playback.url;
   video.play().catch(() => {
     /* autoplay may need a tap; the play button is shown */
   });
   wake();
   loadSubtitles();
+  loadMeta();
 
   return {
     el: root,
     destroy() {
       save(true);
       clearTimeout(hideTimer);
+      clearTimeout(pauseTimer);
+      clearInterval(nextTimer);
+      window.removeEventListener("nuvio:pref", onPrefChange);
+      try {
+        localStorage.removeItem(LAST_PLAYER_KEY);
+      } catch (_) {
+        /* ignore */
+      }
       document.removeEventListener("keydown", onKey);
       video.pause();
       video.removeAttribute("src");

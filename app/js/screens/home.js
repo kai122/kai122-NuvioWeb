@@ -3,8 +3,9 @@ import { listCatalogs, fetchCatalog, typeLabel } from "../addons.js";
 import { store } from "../store.js";
 import { navigate } from "../router.js";
 import { posterCard, rowSection, skeletonPosters, cwCard, openDetail } from "../components.js";
-import { resumeEntry } from "./streams.js";
+import { resumeEntry, openStreams } from "./streams.js";
 import { pref } from "../prefs.js";
+import { fetchRatings } from "../services/mdblist.js";
 
 const HERO_COUNT = 8;
 const HERO_INTERVAL_MS = 8000;
@@ -83,6 +84,32 @@ function buildHero(items) {
           )
         : null
     );
+    if (pref("mdb.hero", false)) {
+      const shown = index;
+      fetchRatings(item.type, item.id).then((ratings) => {
+        if (shown !== index || !ratings.length) return;
+        fill(
+          badges,
+          ratings
+            .slice(0, 4)
+            .map((r) =>
+              r.source === "imdb"
+                ? h(
+                    "span.imdb-chip",
+                    {},
+                    h("span.imdb-mark", {}, "IMDb"),
+                    h("span.imdb-score", {}, r.value)
+                  )
+                : h(
+                    "span.rating-chip",
+                    {},
+                    h("span.rating-source", {}, r.label),
+                    h("span.rating-value", {}, r.value)
+                  )
+            )
+        );
+      });
+    }
     synopsis.textContent = item.description || "";
     dots
       .querySelectorAll(".hero-dot")
@@ -97,6 +124,7 @@ function buildHero(items) {
 
   // Horizontal swipe changes the item.
   let startX = null;
+  let swipedAt = 0;
   hero.addEventListener("touchstart", (e) => (startX = e.touches[0].clientX), { passive: true });
   hero.addEventListener("touchend", (e) => {
     if (startX === null) return;
@@ -105,14 +133,14 @@ function buildHero(items) {
     if (Math.abs(dx) > 50) {
       show(index + (dx < 0 ? 1 : -1));
       restart();
-      hero.dataset.swiped = "1";
-      setTimeout(() => delete hero.dataset.swiped, 0);
+      swipedAt = Date.now();
     }
   });
   hero.addEventListener(
     "click",
     (e) => {
-      if (hero.dataset.swiped) e.stopImmediatePropagation();
+      // A swipe also ends with a click; don't open the title for it.
+      if (Date.now() - swipedAt < 400) e.stopImmediatePropagation();
     },
     true
   );
@@ -136,13 +164,64 @@ function heroSkeleton() {
   );
 }
 
-function continueWatchingRow() {
-  if (!pref("cw.show", true)) return null;
-  const entries = store.continueWatching();
-  if (!entries.length) return null;
-  const { section, track } = rowSection("Continue Watching", { className: "row-cw" });
-  entries.forEach((entry) => track.append(cwCard(entry, resumeEntry)));
-  return section;
+function openEntry({ kind, upcoming, airDate, updatedAt, released, ...entry }) {
+  if (kind === "next" && upcoming) navigate(`detail/series/${encodeURIComponent(entry.metaId)}`);
+  else if (kind === "next") openStreams(entry);
+  else resumeEntry(entry);
+}
+
+// Continue Watching = in-progress items plus Next Up episodes.
+// Sort: default (most recent first), streaming (in progress first, then Next
+// Up), split (unaired Next Up episodes get their own "Upcoming" row).
+function continueWatchingRows() {
+  if (!pref("cw.show", true)) return [];
+  const progress = store.continueWatching().map((e) => ({ ...e, kind: "progress" }));
+  const inProgressSeries = new Set(progress.filter((e) => e.season).map((e) => e.metaId));
+  const showUnaired = !!pref("cw.unaired", false);
+  const now = Date.now();
+  const nextUp = Object.values(store.nextUpMap())
+    .filter((e) => !inProgressSeries.has(e.metaId))
+    .map((e) => {
+      const air = new Date(e.released || "").getTime();
+      const upcoming = Number.isFinite(air) && air > now;
+      return {
+        ...e,
+        kind: "next",
+        upcoming,
+        airDate: upcoming
+          ? new Date(air).toLocaleDateString(undefined, { day: "numeric", month: "short" })
+          : ""
+      };
+    })
+    .filter((e) => showUnaired || !e.upcoming);
+  const sort = pref("cw.sort", "default");
+  const byRecent = (a, b) => (b.updatedAt || 0) - (a.updatedAt || 0);
+  let main;
+  let upcoming = [];
+  if (sort === "streaming")
+    main = [
+      ...progress.sort(byRecent),
+      ...nextUp.filter((e) => !e.upcoming).sort(byRecent),
+      ...nextUp.filter((e) => e.upcoming)
+    ];
+  else if (sort === "split") {
+    main = [...progress, ...nextUp.filter((e) => !e.upcoming)].sort(byRecent);
+    upcoming = nextUp
+      .filter((e) => e.upcoming)
+      .sort((a, b) => String(a.released).localeCompare(String(b.released)));
+  } else main = [...progress, ...nextUp].sort(byRecent);
+  const out = [];
+  const style = pref("cw.style", "card");
+  for (const [title, entries] of [
+    ["Continue Watching", main.slice(0, 20)],
+    ["Upcoming", upcoming.slice(0, 20)]
+  ]) {
+    if (!entries.length) continue;
+    const { section, track } = rowSection(title, { className: `row-cw is-${style}` });
+    entries.forEach((entry) => track.append(cwCard(entry, openEntry)));
+    out.push(section);
+  }
+  return out;
 }
 
 export function renderHome() {
@@ -208,7 +287,9 @@ export function renderHome() {
           fetchCatalog(entry)
             .then((fetched) => {
               const items = hideUnreleased
-                ? fetched.filter((item) => !(Number.parseInt(item.year || item.releaseInfo, 10) > thisYear))
+                ? fetched.filter(
+                    (item) => !(Number.parseInt(item.year || item.releaseInfo, 10) > thisYear)
+                  )
                 : fetched;
               if (!items.length) {
                 section.remove();
@@ -237,7 +318,7 @@ export function renderHome() {
   return {
     el: root,
     onShow() {
-      fill(cwSlot, continueWatchingRow() || "");
+      fill(cwSlot, ...continueWatchingRows());
     },
     destroy() {
       hero?.stop();

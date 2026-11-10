@@ -42,7 +42,15 @@ export const store = {
   },
   removeProfile(id) {
     this.saveProfiles(this.profiles().filter((p) => p.id !== id));
-    for (const key of ["library", "progress", "watched"]) {
+    for (const key of [
+      "library",
+      "progress",
+      "watched",
+      "nextUp",
+      "links",
+      "recentSearches",
+      "seenEpisodes"
+    ]) {
       try {
         localStorage.removeItem(`${PREFIX}${key}.${id}`);
       } catch (_) {
@@ -51,6 +59,22 @@ export const store = {
     }
   },
   activeProfileId: null,
+  // Last chosen profile, kept across launches when "Remember Last Profile" is on.
+  lastProfileId() {
+    return read("lastProfile", null);
+  },
+  rememberProfile(id) {
+    write("lastProfile", id);
+  },
+  forgetActiveProfile() {
+    this.activeProfileId = null;
+    try {
+      localStorage.removeItem(`${PREFIX}lastProfile`);
+      sessionStorage.removeItem(`${PREFIX}activeProfile`);
+    } catch (_) {
+      /* ignore */
+    }
+  },
   activeProfile() {
     return this.profiles().find((p) => p.id === this.activeProfileId) || null;
   },
@@ -80,6 +104,7 @@ export const store = {
   },
   clearContinueWatching() {
     this.saveScoped("progress", {});
+    this.saveScoped("nextUp", {});
   },
   resetDevice() {
     try {
@@ -103,6 +128,9 @@ export const store = {
   library() {
     return this.scoped("library", []);
   },
+  saveLibrary(list) {
+    this.saveScoped("library", list);
+  },
   isSaved(id) {
     return this.library().some((item) => item.id === id);
   },
@@ -116,7 +144,10 @@ export const store = {
         type: item.type,
         name: item.name,
         poster: item.poster,
-        year: item.year
+        background: item.background,
+        logo: item.logo,
+        year: item.year,
+        addedAt: Date.now()
       });
     this.saveScoped("library", list);
     return index < 0;
@@ -140,6 +171,51 @@ export const store = {
       .filter((entry) => entry.duration > 0 && entry.time / entry.duration < 0.95)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 20);
+  },
+
+  // Next Up: one entry per series, pointing at the episode to watch next.
+  nextUpMap() {
+    return this.scoped("nextUp", {});
+  },
+  setNextUp(metaId, entry) {
+    const map = this.nextUpMap();
+    if (entry) map[metaId] = { ...entry, updatedAt: Date.now() };
+    else delete map[metaId];
+    this.saveScoped("nextUp", map);
+  },
+
+  // The last stream link that played for each movie or episode.
+  lastLink(videoId) {
+    return this.scoped("links", {})[videoId] || null;
+  },
+  saveLink(videoId, link) {
+    const map = this.scoped("links", {});
+    map[videoId] = { ...link, savedAt: Date.now() };
+    const keys = Object.keys(map).sort((a, b) => map[b].savedAt - map[a].savedAt);
+    for (const key of keys.slice(200)) delete map[key];
+    this.saveScoped("links", map);
+  },
+
+  recentSearches() {
+    return this.scoped("recentSearches", []);
+  },
+  addRecentSearch(query) {
+    const q = String(query || "").trim();
+    if (q.length < 2) return;
+    const list = this.recentSearches().filter((x) => x.toLowerCase() !== q.toLowerCase());
+    list.unshift(q);
+    this.saveScoped("recentSearches", list.slice(0, 10));
+  },
+  clearRecentSearches() {
+    this.saveScoped("recentSearches", []);
+  },
+
+  // Latest released episode seen per saved series (for release alerts).
+  seenEpisodes() {
+    return this.scoped("seenEpisodes", {});
+  },
+  saveSeenEpisodes(map) {
+    this.saveScoped("seenEpisodes", map);
   },
 
   watchedSet() {

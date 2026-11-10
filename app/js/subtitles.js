@@ -123,3 +123,21 @@ export function findCue(cues, t) {
   }
   return -1;
 }
+
+// "Strip SDH": drop [sound effects], (music), ♪ lines and SPEAKER: labels.
+export function stripSdh(text) {
+  return String(text || "")
+    .split("\n")
+    .map((line) =>
+      line
+        .replace(/\[[^\]]*\]/g, "")
+        .replace(/\([^)]*\)/g, "")
+        .replace(/^\s*-?\s*[A-Z][A-Z0-9 .'-]{1,30}:\s*/, (m) =>
+          m.trim().startsWith("-") ? "- " : ""
+        )
+        .replace(/[♪♫]+/g, "")
+        .trim()
+    )
+    .filter((line) => line && line !== "-")
+    .join("\n");
+}

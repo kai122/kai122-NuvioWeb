@@ -2,6 +2,8 @@ import { h, icon, fill } from "../dom.js";
 import { listCatalogs, fetchCatalog, search, typeLabel, catalogSupportsExtra } from "../addons.js";
 import { posterCard, skeletonPosters, pageHeader } from "../components.js";
 import { openSheet, optionList } from "../sheet.js";
+import { store } from "../store.js";
+import { pref } from "../prefs.js";
 
 const PAGE_SIZE = 100;
 
@@ -37,7 +39,53 @@ export function renderDiscover([presetKey] = []) {
   const header = pageHeader("Discover", searchButton);
   const browse = h("div.discover-browse", {}, chips, source, grid, sentinel);
   const results = h("div.search-results.is-hidden");
-  const root = h("div.screen.screen-discover", {}, header, searchBar, browse, results);
+  const recent = h("div.recent-searches.is-hidden");
+  const root = h("div.screen.screen-discover", {}, header, searchBar, recent, browse, results);
+
+  // Recent Searches: shown while the search bar is focused and empty.
+  function drawRecent() {
+    const list = pref("search.recent", true) ? store.recentSearches() : [];
+    const visible = searching && !input.value.trim() && list.length > 0;
+    recent.classList.toggle("is-hidden", !visible);
+    if (!visible) return;
+    fill(
+      recent,
+      h(
+        "div.recent-head",
+        {},
+        h("h2.row-title", {}, "Recent Searches"),
+        h(
+          "button.link-button",
+          {
+            type: "button",
+            onclick: () => {
+              store.clearRecentSearches();
+              drawRecent();
+            }
+          },
+          "Clear"
+        )
+      ),
+      h(
+        "div.recent-chips",
+        {},
+        list.map((query) =>
+          h(
+            "button.chip",
+            {
+              type: "button",
+              onclick: () => {
+                input.value = query;
+                input.dispatchEvent(new Event("input"));
+              }
+            },
+            icon("search", 16),
+            h("span", {}, query)
+          )
+        )
+      )
+    );
+  }
 
   let catalogs = [];
   let type = "movie";
@@ -187,10 +235,12 @@ export function renderDiscover([presetKey] = []) {
       results.classList.add("is-hidden");
       browse.classList.remove("is-hidden");
     }
+    drawRecent();
   }
   input.addEventListener("input", () => {
     clearTimeout(searchTimer);
     const query = input.value.trim();
+    drawRecent();
     if (query.length < 2) {
       results.classList.add("is-hidden");
       browse.classList.remove("is-hidden");
@@ -203,6 +253,8 @@ export function renderDiscover([presetKey] = []) {
       fill(results, h("div.poster-grid", {}, skeletonPosters(10)));
       const groups = await search(query);
       if (gen !== searchGen) return;
+      if (pref("search.recent", true) && groups.some((g) => g.items.length))
+        store.addRecentSearch(query);
       const filled = groups.filter((group) => group.items.length);
       fill(
         results,

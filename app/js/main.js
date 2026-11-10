@@ -11,7 +11,10 @@ import { renderStreams } from "./screens/streams.js";
 import { renderDetail } from "./screens/detail.js";
 import { renderPlayer } from "./screens/player.js";
 import { renderProfiles, showSplash } from "./screens/profiles.js";
-import { closeAllSheets } from "./sheet.js";
+import { closeAllSheets, openSheet } from "./sheet.js";
+import { pref } from "./prefs.js";
+import { startPlayback } from "./screens/streams.js";
+import { checkReleaseAlerts } from "./services/alerts.js";
 
 const TAB_ROUTES = new Set(["home", "search", "library", "profile"]);
 const view = h("main.view");
@@ -28,6 +31,7 @@ function routeKey(route) {
 
 function setActiveProfile(profile) {
   store.activeProfileId = profile.id;
+  store.rememberProfile(profile.id);
   try {
     sessionStorage.setItem("nuvioTouch.activeProfile", profile.id);
   } catch (_) {
@@ -62,6 +66,7 @@ function build(route) {
         onChosen: (profile) => {
           setActiveProfile(profile);
           navigate("home", { replace: true });
+          runLaunchTasks();
         }
       });
     default:
@@ -113,7 +118,7 @@ onRoute(show);
 // Rebuild Home when its layout settings change.
 window.addEventListener("nuvio:pref", (event) => {
   const key = String(event.detail?.key || "");
-  if (key === "*" || key.startsWith("home.") || key.startsWith("cw.")) {
+  if (key === "*" || /^(home|cw|poster|depth|tmdb|mdb)\./.test(key)) {
     homeScreen?.destroy?.();
     homeScreen = null;
   }
@@ -125,20 +130,73 @@ window.addEventListener("nuvio:addons-changed", () => {
   homeScreen = null;
 });
 
+// "Resume prompt on launch": offer to continue when the app was closed
+// while a video was playing.
+function offerResume() {
+  if (!pref("cw.resumePrompt", false)) return;
+  let last = null;
+  try {
+    last = JSON.parse(localStorage.getItem("nuvioTouch.lastPlayer") || "null");
+    localStorage.removeItem("nuvioTouch.lastPlayer");
+  } catch (_) {
+    return;
+  }
+  if (!last?.url || last.profileId !== store.activeProfileId) return;
+  const progress = store.progressMap()[last.videoId];
+  if (!progress) return;
+  const label = last.season ? `${last.name} · S${last.season} E${last.episode}` : last.name;
+  const sheet = openSheet({
+    title: "Continue watching?",
+    content: h(
+      "div.form",
+      {},
+      h("p.form-hint", {}, label),
+      h(
+        "div.form-actions",
+        {},
+        h("button.pill-button", { type: "button", onclick: () => sheet.close() }, "Not now"),
+        h(
+          "button.play-button",
+          {
+            type: "button",
+            onclick: () => {
+              sheet.close();
+              startPlayback({ ...last, profileId: undefined, at: undefined });
+            }
+          },
+          "Resume"
+        )
+      )
+    )
+  });
+}
+
 async function boot() {
   let firstLaunch = true;
   try {
-    const remembered = sessionStorage.getItem("nuvioTouch.activeProfile");
+    // This tab's profile, or (with Remember Last Profile on) the last one used.
+    let remembered = sessionStorage.getItem("nuvioTouch.activeProfile");
+    if (!remembered && pref("adv.rememberProfile", true)) remembered = store.lastProfileId();
     const profile = store.profiles().find((p) => p.id === remembered);
     if (profile) {
+      firstLaunch = !sessionStorage.getItem("nuvioTouch.activeProfile");
       setActiveProfile(profile);
-      firstLaunch = false;
     }
   } catch (_) {
     /* ignore */
   }
   if (firstLaunch) await showSplash();
   show(parseRoute(), "forward");
+  if (store.activeProfileId) runLaunchTasks();
+}
+
+// Once per launch, after a profile is active.
+let launchTasksDone = false;
+function runLaunchTasks() {
+  if (launchTasksDone) return;
+  launchTasksDone = true;
+  if (parseRoute().name !== "play") setTimeout(offerResume, 600);
+  setTimeout(() => checkReleaseAlerts(), 3000);
 }
 
 boot();
