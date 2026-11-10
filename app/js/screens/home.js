@@ -66,12 +66,23 @@ function buildHero(items) {
   function show(i) {
     index = (i + items.length) % items.length;
     const item = items[index];
-    const back = layers[1 - front];
     const bgUrl = safeImageUrl(item.background);
-    back.style.backgroundImage = bgUrl ? `url("${bgUrl.replace(/"/g, "%22")}")` : "";
-    back.classList.add("is-front");
-    layers[front].classList.remove("is-front");
-    front = 1 - front;
+    // Decode the next backdrop off the main thread before fading to it, so
+    // the swap never stalls scrolling.
+    const shown = index;
+    const swap = () => {
+      if (shown !== index) return;
+      const back = layers[1 - front];
+      back.style.backgroundImage = bgUrl ? `url("${bgUrl.replace(/"/g, "%22")}")` : "";
+      back.classList.add("is-front");
+      layers[front].classList.remove("is-front");
+      front = 1 - front;
+    };
+    if (bgUrl) {
+      const pre = new Image();
+      pre.src = bgUrl;
+      (pre.decode ? pre.decode() : Promise.resolve()).then(swap, swap);
+    } else swap();
     setLogo(item);
     meta.textContent = heroMeta(item);
     fill(
@@ -117,11 +128,26 @@ function buildHero(items) {
       .forEach((dot, d) => dot.classList.toggle("is-active", d === index));
   }
 
+  let onScreen = true;
   function restart() {
     clearInterval(timer);
-    if (!prefersReducedMotion() && items.length > 1)
+    if (onScreen && !prefersReducedMotion() && items.length > 1)
       timer = setInterval(() => show(index + 1), HERO_INTERVAL_MS);
   }
+  // The carousel rests while it's scrolled out of view or the app is hidden.
+  const visibility =
+    "IntersectionObserver" in window
+      ? new IntersectionObserver((entries) => {
+          onScreen = entries[entries.length - 1].isIntersecting;
+          restart();
+        })
+      : null;
+  visibility?.observe(hero);
+  const onHidden = () => {
+    onScreen = !document.hidden;
+    restart();
+  };
+  document.addEventListener("visibilitychange", onHidden);
 
   // Horizontal swipe changes the item.
   let startX = null;
@@ -148,7 +174,14 @@ function buildHero(items) {
 
   show(0);
   restart();
-  return { el: hero, stop: () => clearInterval(timer) };
+  return {
+    el: hero,
+    stop: () => {
+      clearInterval(timer);
+      visibility?.disconnect();
+      document.removeEventListener("visibilitychange", onHidden);
+    }
+  };
 }
 
 function heroSkeleton() {

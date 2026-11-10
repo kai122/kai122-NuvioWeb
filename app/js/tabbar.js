@@ -63,8 +63,11 @@ export function refreshTabAvatar() {
 
 function syncCompact() {
   if (!bar) return;
-  const compact = window.scrollY > 60;
-  if (compact !== bar.classList.contains("is-compact")) {
+  // Shrinks past 60px and only grows back near the top, so it doesn't
+  // resize back and forth while you scroll around that point.
+  const was = bar.classList.contains("is-compact");
+  const compact = was ? window.scrollY > 16 : window.scrollY > 60;
+  if (compact !== was) {
     bar.classList.toggle("is-compact", compact);
     requestAnimationFrame(() => movePill(true));
   }

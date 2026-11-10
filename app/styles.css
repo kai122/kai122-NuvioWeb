@@ -97,13 +97,13 @@ img.is-broken {
 
 /* --- Shimmer skeletons ----------------------------------------------------- */
 .shimmer {
-  background: linear-gradient(100deg, #1d1d20 30%, #2a2a2e 50%, #1d1d20 70%) 0 0 / 300% 100%;
-  animation: shimmer 1.4s linear infinite;
+  background: #222226;
+  animation: shimmer 1.2s ease-in-out infinite alternate;
 }
 
 @keyframes shimmer {
   to {
-    background-position: -100% 0;
+    opacity: 0.55;
   }
 }
 
@@ -141,9 +141,15 @@ img.is-broken {
 }
 
 /* --- Glass ----------------------------------------------------------------- */
-.glass,
-.tabbar,
+/* Blur is costly on iPad: only fixed chrome gets it, never things inside
+   scrolling rows. */
 .cw-chip {
+  background: rgba(24, 24, 26, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.glass,
+.tabbar {
   background: rgba(38, 38, 40, 0.55);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
   backdrop-filter: blur(20px) saturate(1.6);
@@ -366,15 +372,12 @@ img.is-broken {
   background-position: center 20%;
   background-size: cover;
   opacity: 0;
-  transform: scale(1.03);
-  transition:
-    opacity 700ms var(--ease),
-    transform 8s linear;
+  will-change: opacity;
+  transition: opacity 700ms var(--ease);
 }
 
 .hero-layer.is-front {
   opacity: 1;
-  transform: scale(1);
 }
 
 .hero-shade {
@@ -3945,4 +3948,14 @@ body[data-route="play"] {
 }
 .collection-tile.hide-title .collection-tile-title {
   display: none;
+}
+
+/* Scrolling performance: in long grids, cards far off screen skip layout and
+   paint. */
+.poster-grid .poster-card {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 176px auto 320px;
+}
+.tabbar {
+  contain: layout style;
 }
