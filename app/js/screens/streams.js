@@ -4,6 +4,7 @@ import { navigate, back } from "../router.js";
 import { createStreamList, autoPick, choiceFor } from "../streamlist.js";
 import { store } from "../store.js";
 import { pref } from "../prefs.js";
+import { probeStream, describeCodec } from "../mkvprobe.js";
 
 const LINK_REUSE_MS = 48 * 3600 * 1000;
 
@@ -104,10 +105,96 @@ export function openExternalSheet(url, title = "Play with", tryHere = null) {
             h("span", {}, "Try playing here anyway"),
             icon("play", 20)
           )
+        : null,
+      tryHere
+        ? h(
+            "button.option",
+            {
+              type: "button",
+              onclick: () => {
+                sheet.close();
+                openProbeSheet(url);
+              }
+            },
+            h("span", {}, "Check if it can play here"),
+            icon("info", 20)
+          )
         : null
     )
   });
   return sheet;
+}
+
+// Results of reading the start of a file: can the app read it, and what's
+// inside. Tells us whether an in-app MKV player would work for this source.
+function openProbeSheet(url) {
+  const body = h(
+    "div.form.probe",
+    {},
+    h("div.signin-status", {}, h("span.spinner"), h("span", {}, "Reading the start of the file…"))
+  );
+  openSheet({ title: "Can this play in the app?", content: body });
+  probeStream(url).then((r) => {
+    const row = (label, value, ok) =>
+      h(
+        "div.probe-row",
+        { class: ok === true ? "is-ok" : ok === false ? "is-bad" : "" },
+        h("span.probe-label", {}, label),
+        h("span.probe-value", {}, value)
+      );
+    const rows = [
+      row("Server", r.host || "unknown"),
+      row(
+        "App can read the file",
+        r.readable
+          ? `Yes${r.supportsRange ? " (with seeking)" : r.status === 200 ? " (no seeking)" : ""}`
+          : `No — ${r.error || "blocked"}`,
+        r.readable
+      )
+    ];
+    if (r.readable && !r.mkv) rows.push(row("File type", r.contentType || "Not an MKV", null));
+    let verdict = r.readable
+      ? "The app can read this file."
+      : "This server doesn't let websites read its files, so it needs a small relay or a player app.";
+    if (r.mkv) {
+      rows.push(row("Container", r.mkv.docType === "webm" ? "WebM" : "MKV", true));
+      if (!r.mkv.tracks.length) rows.push(row("Tracks", "Not found in the first 512 KB", null));
+      let videoOk = false;
+      let audioOk = false;
+      for (const t of r.mkv.tracks) {
+        const d = describeCodec(t.codec);
+        if (t.type === "video" && d.ok) videoOk = true;
+        if (t.type === "audio" && d.ok) audioOk = true;
+        const extra = [
+          t.language && t.language !== "und" ? t.language : "",
+          t.width ? `${t.width}×${t.height}` : "",
+          t.name
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        rows.push(
+          row(
+            `${t.type ? t.type[0].toUpperCase() + t.type.slice(1) : "Track"}`,
+            `${d.label}${extra ? ` — ${extra}` : ""}`,
+            d.ok
+          )
+        );
+      }
+      if (r.mkv.tracks.length)
+        verdict =
+          videoOk && audioOk
+            ? "Good news: everything needed can be repackaged for Safari."
+            : videoOk
+              ? "The video works, but the audio format needs a player app (or another source)."
+              : "This video format needs a player app.";
+    }
+    fill(
+      body,
+      h("p.probe-verdict", {}, verdict),
+      h("div.probe-table", {}, rows),
+      h("p.form-hint", {}, "Take a screenshot of this and send it over.")
+    );
+  });
 }
 
 // context: { type, metaId, videoId, name, poster, background, logo, season, episode, episodeTitle, thumbnail, year }

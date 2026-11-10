@@ -3774,3 +3774,43 @@ html.depth-on .episode-card::before {
 .stream-card.needs-player .stream-line {
   opacity: 0.7;
 }
+
+/* File check ("Can this play in the app?") */
+.probe-verdict {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+}
+.probe-table {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.probe-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+.probe-row:last-child {
+  border-bottom: 0;
+}
+.probe-label {
+  color: var(--text-2);
+}
+.probe-value {
+  text-align: right;
+  word-break: break-word;
+}
+.probe-row.is-ok .probe-value::before {
+  content: "✓ ";
+  color: #30d158;
+}
+.probe-row.is-bad .probe-value::before {
+  content: "✕ ";
+  color: #ff453a;
+}
