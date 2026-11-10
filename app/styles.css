@@ -3719,3 +3719,37 @@ html.depth-on .episode-card::before {
 .recent-chips .chip {
   gap: 6px;
 }
+
+/* Nuvio sign-in */
+.signin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.signin-code {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  word-break: break-all;
+  user-select: all;
+}
+.signin-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.signin-status .spinner {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+.picker-manage.is-signin {
+  margin-top: 10px;
+  background: #fff;
+  color: #111;
+}

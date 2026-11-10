@@ -79,20 +79,53 @@ export const store = {
     return this.profiles().find((p) => p.id === this.activeProfileId) || null;
   },
 
+  // Add-ons are per profile when the profile has its own list (Nuvio account
+  // profiles do); otherwise the device-wide list is used.
+  addonKey() {
+    const id = this.activeProfileId;
+    return id && read(`addons.${id}`, null) ? `addons.${id}` : "addons";
+  },
+  disabledKey() {
+    return this.addonKey() === "addons"
+      ? "addonsDisabled"
+      : `addonsDisabled.${this.activeProfileId}`;
+  },
   addonUrls() {
-    return read("addons", DEFAULT_ADDONS);
+    return read(this.addonKey(), DEFAULT_ADDONS);
   },
   saveAddonUrls(list) {
-    write("addons", [...new Set(list)]);
+    write(this.addonKey(), [...new Set(list)]);
   },
   disabledAddons() {
-    return new Set(read("addonsDisabled", []));
+    return new Set(read(this.disabledKey(), []));
   },
   setAddonEnabled(url, enabled) {
     const set = this.disabledAddons();
     if (enabled) set.delete(url);
     else set.add(url);
-    write("addonsDisabled", [...set]);
+    write(this.disabledKey(), [...set]);
+  },
+  saveProfileAddons(profileId, urls, disabled = []) {
+    write(`addons.${profileId}`, [...new Set(urls)]);
+    write(`addonsDisabled.${profileId}`, [...new Set(disabled)]);
+  },
+
+  // Merge downloaded data into a profile, keeping anything newer done here.
+  mergeForProfile(profileId, key, incoming) {
+    const current = read(`${key}.${profileId}`, null);
+    let next = incoming;
+    if (key === "progress" && current) {
+      next = { ...incoming };
+      for (const [id, entry] of Object.entries(current)) {
+        if (!next[id] || (entry.updatedAt || 0) > (next[id].updatedAt || 0)) next[id] = entry;
+      }
+    } else if (key === "watched" && current) {
+      next = [...new Set([...incoming, ...current])];
+    } else if (key === "library" && current) {
+      const ids = new Set(incoming.map((x) => x.id));
+      next = [...incoming, ...current.filter((x) => !ids.has(x.id))];
+    }
+    write(`${key}.${profileId}`, next);
   },
   moveAddon(url, delta) {
     const list = this.addonUrls();

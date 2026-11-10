@@ -15,6 +15,7 @@ import { closeAllSheets, openSheet } from "./sheet.js";
 import { pref } from "./prefs.js";
 import { startPlayback } from "./screens/streams.js";
 import { checkReleaseAlerts } from "./services/alerts.js";
+import { account, downloadAccount } from "./services/nuvioAccount.js";
 
 const TAB_ROUTES = new Set(["home", "search", "library", "profile"]);
 const view = h("main.view");
@@ -196,6 +197,18 @@ function runLaunchTasks() {
   if (launchTasksDone) return;
   launchTasksDone = true;
   if (parseRoute().name !== "play") setTimeout(offerResume, 600);
+  // Signed in to Nuvio: refresh from the account once per launch.
+  if (account()) {
+    setTimeout(() => {
+      downloadAccount()
+        .then(() => {
+          homeScreen?.destroy?.();
+          homeScreen = null;
+          if (parseRoute().name === "home") show(parseRoute(), "forward");
+        })
+        .catch(() => {});
+    }, 1500);
+  }
   setTimeout(() => checkReleaseAlerts(), 3000);
 }
 

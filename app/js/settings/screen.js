@@ -9,6 +9,8 @@ import { listCatalogs } from "../addons.js";
 import { sectionAddons } from "../screens/profile.js";
 import { pref, setPref, clearPrefs, allPrefs, importPrefs } from "../prefs.js";
 import { CATEGORIES, PAGES, THEMES } from "./schema.js";
+import { account, signOut } from "../services/nuvioAccount.js";
+import { openSignIn, runDownload, summaryText } from "../signin.js";
 
 const VERSION = "1.0 touch";
 
@@ -438,9 +440,10 @@ function confirmReset() {
 }
 
 // ---- Custom pages -----------------------------------------------------------
-function customAccount() {
+function customAccount(ctx) {
   const profile = store.activeProfile();
-  return [
+  const acct = account();
+  const cards = [
     h(
       "div.profile-hero-card",
       {},
@@ -456,11 +459,53 @@ function customAccount() {
         )
       )
     ),
-    groupCard([
-      rowShell({ title: "Status", trailing: h("span.settings-value", {}, "Local profile") }),
-      rowShell({ title: "Email", trailing: h("span.settings-value", {}, "Not signed in") })
-    ])
+    h("div.set-section-label", {}, "NUVIO ACCOUNT")
   ];
+  if (!acct) {
+    cards.push(
+      groupCard([
+        rowShell({
+          title: "Sign in with Nuvio",
+          sub: "Bring your profiles, add-ons, Continue Watching and library from the Nuvio app.",
+          onClick: () =>
+            openSignIn({ onDone: () => navigate("profiles"), onFail: () => ctx.refresh() })
+        })
+      ])
+    );
+  } else {
+    cards.push(
+      groupCard([
+        rowShell({
+          title: "Signed in",
+          trailing: h("span.settings-value", {}, acct.email || "Nuvio account")
+        }),
+        rowShell({
+          title: "Sync now",
+          sub: acct.lastSync
+            ? `Last synced ${new Date(acct.lastSync).toLocaleString()} • ${summaryText(acct.lastSummary)}`
+            : "Download your account again",
+          onClick: () => runDownload().then(() => ctx.refresh())
+        }),
+        rowShell({
+          title: "Sign out of Nuvio",
+          sub: "Stops syncing. Downloaded profiles stay on this iPad until you delete them.",
+          danger: true,
+          trailing: null,
+          onClick: async () => {
+            await signOut();
+            toast("Signed out of Nuvio");
+            ctx.refresh();
+          }
+        })
+      ]),
+      h(
+        "p.settings-note",
+        {},
+        "Syncing downloads from your account. Anything you watch or save here stays on this iPad for now and isn't sent back to Nuvio."
+      )
+    );
+  }
+  return cards;
 }
 
 function customTracking() {
@@ -588,7 +633,7 @@ function renderCustom(row) {
 function pageBody(page, ctx) {
   const out = [];
   if (page.custom === "addons") return [sectionAddons()].flat();
-  if (page.custom === "account") out.push(...customAccount());
+  if (page.custom === "account") out.push(...customAccount(ctx));
   if (page.custom === "tracking") out.push(...customTracking());
   // group rows between section labels into cards
   let group = [];

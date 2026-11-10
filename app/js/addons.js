@@ -49,9 +49,13 @@ export async function fetchManifest(manifestUrl) {
 }
 
 let allAddonsPromise = null;
+let allAddonsKey = "";
 // All installed add-ons in the user's order, each with { enabled }.
+// Reloaded when the list changes (e.g. switching to a profile with its own).
 export function loadAllAddons({ refresh = false } = {}) {
-  if (!allAddonsPromise || refresh) {
+  const key = store.addonUrls().join("\n");
+  if (!allAddonsPromise || refresh || key !== allAddonsKey) {
+    allAddonsKey = key;
     allAddonsPromise = Promise.all(
       store
         .addonUrls()

@@ -2,6 +2,8 @@ import { h, icon, prefersReducedMotion, fill } from "../dom.js";
 import { store } from "../store.js";
 import { avatarEl } from "../tabbar.js";
 import { openSheet } from "../sheet.js";
+import { account } from "../services/nuvioAccount.js";
+import { openSignIn } from "../signin.js";
 
 // "Who's watching?" gate. onChosen(profile) is called after the exit motion.
 export function renderProfiles({ onChosen }) {
@@ -22,7 +24,25 @@ export function renderProfiles({ onChosen }) {
       h("img.picker-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }),
       h("h1.picker-title", {}, "Who's watching?"),
       grid,
-      manage
+      manage,
+      account()
+        ? null
+        : h(
+            "button.picker-manage.is-signin",
+            {
+              type: "button",
+              onclick: (event) => {
+                const button = event.currentTarget;
+                openSignIn({
+                  onDone: () => {
+                    button.hidden = true;
+                    draw();
+                  }
+                });
+              }
+            },
+            "Sign in with Nuvio"
+          )
     )
   );
 
