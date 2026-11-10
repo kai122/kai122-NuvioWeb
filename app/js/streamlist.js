@@ -27,12 +27,31 @@ export function streamSize(stream) {
   return match ? `${match[1].replace(",", ".")} ${match[2].toUpperCase()}` : "";
 }
 
+// Can Safari play this stream itself? MKV/AVI need VLC or Infuse.
+// Returns "native", "external" or "unknown" (no file name to go on).
+const EXTERNAL_RE = /\.(mkv|avi|wmv|flv|divx|ts)(?:$|[?#\s"'])/i;
+const NATIVE_RE = /\.(mp4|m4v|mov|webm|m3u8)(?:$|[?#\s"'])/i;
+export function playability(stream) {
+  const hints = stream?.behaviorHints || {};
+  let path = "";
+  try {
+    path = decodeURIComponent(new URL(stream.url).pathname);
+  } catch (_) {
+    path = "";
+  }
+  const names = [hints.filename, path, ...streamLines(stream)].filter(Boolean).join(" \n ");
+  if (/m3u8|\/hls\//i.test(path)) return "native";
+  if (EXTERNAL_RE.test(names) || /\bmkv\b/i.test(names)) return "external";
+  if (NATIVE_RE.test(names) || /\b(mp4|webm)\b/i.test(names)) return "native";
+  return "unknown";
+}
+
 // Picks the stream to auto-play from the add-on groups, or null.
 // mode: "first" | "regex"; bingeGroup: prefer the same source as last episode.
 export function autoPick(groups, { mode, pattern = "", bingeGroup = "" }) {
   const playable = groups.flatMap((group) =>
     group.streams
-      .filter((stream) => safeHttpUrl(stream.url))
+      .filter((stream) => safeHttpUrl(stream.url) && playability(stream) !== "external")
       .map((stream) => ({ stream, addon: group.addon }))
   );
   if (!playable.length) return null;
@@ -66,7 +85,8 @@ export function choiceFor({ stream, addon }) {
   };
 }
 
-// onPlay({ url, streamTitle, addonName, bingeGroup, stream }); onExternal(url)
+// onPlay({ url, streamTitle, addonName, bingeGroup, stream });
+// onExternal(url, tryHere) where tryHere() plays it in the app anyway.
 // onUpdate(groups, done) runs after each add-on answers.
 export function createStreamList(context, { onPlay, onExternal, onUpdate, currentUrl = "" }) {
   const chips = h("div.stream-chips");
@@ -114,17 +134,20 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
     const name = (stream.name || addon.manifest.name).trim();
     const isCurrent = playUrl && playUrl === currentUrl;
     const size = pref("streams.sizeBadges", true) ? streamSize(stream) : "";
+    const needsPlayer = playUrl && playability(stream) === "external";
     return h(
       "div.stream-card",
       {
-        class: `${playUrl ? "" : "is-disabled"} ${isCurrent ? "is-current" : ""} badge-${pref("streams.badgePos", "bottom")}`
+        class: `${playUrl ? "" : "is-disabled"} ${isCurrent ? "is-current" : ""} ${needsPlayer ? "needs-player" : ""} badge-${pref("streams.badgePos", "bottom")}`
       },
       h(
         "button.stream-main",
         {
           type: "button",
           onclick: () => {
-            if (playUrl) {
+            if (needsPlayer) {
+              onExternal(playUrl, () => onPlay(choiceFor({ stream, addon })), true);
+            } else if (playUrl) {
               onPlay(choiceFor({ stream, addon }));
             } else if (externalUrl) {
               window.open(externalUrl, "_blank", "noopener");
@@ -157,12 +180,22 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
           : null,
         name.split("\n").map((part) => h("span.stream-name", {}, part)),
         lines.map((line) => h("span.stream-line", {}, line)),
-        size ? h("span.stream-size", {}, size) : null
+        h(
+          "span.stream-badges",
+          {},
+          size ? h("span.stream-size", {}, size) : null,
+          needsPlayer ? h("span.stream-size.is-player", {}, "Opens in VLC / Infuse") : null
+        )
       ),
       playUrl
         ? h(
             "button.stream-more",
-            { type: "button", "aria-label": "Other players", onclick: () => onExternal(playUrl) },
+            {
+              type: "button",
+              "aria-label": "Other players",
+              onclick: () =>
+                onExternal(playUrl, () => onPlay(choiceFor({ stream, addon })), needsPlayer)
+            },
             icon("external", 20)
           )
         : null
@@ -173,7 +206,14 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
     const visible = groups.filter((group) => filter === "all" || group.addon.url === filter);
     fill(
       list,
-      ...visible.flatMap((group) => group.streams.map((stream) => row(stream, group.addon)))
+      // Streams Safari can play come first; MKV and similar go last.
+      ...visible.flatMap((group) => {
+        const rank = (s) => (playability(s) === "external" ? 1 : 0);
+        return [...group.streams]
+          .map((stream, i) => ({ stream, i }))
+          .sort((a, b) => rank(a.stream) - rank(b.stream) || a.i - b.i)
+          .map(({ stream }) => row(stream, group.addon));
+      })
     );
   }
 

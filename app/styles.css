@@ -3486,9 +3486,12 @@ html.depth-on .episode-card::before {
 .stream-card.badge-top .stream-main {
   position: relative;
 }
-.stream-card.badge-top .stream-size {
+.stream-card.badge-top .stream-badges {
   order: -1;
-  margin: 0 0 6px;
+  margin-bottom: 6px;
+}
+.stream-card.badge-top .stream-size {
+  margin-top: 0;
 }
 
 /* Player */
@@ -3752,4 +3755,22 @@ html.depth-on .episode-card::before {
   margin-top: 10px;
   background: #fff;
   color: #111;
+}
+
+/* Streams Safari can't play (MKV): still listed, but marked */
+.stream-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stream-badges:empty {
+  display: none;
+}
+.stream-size.is-player {
+  background: rgba(255, 196, 0, 0.16);
+  color: #ffd75e;
+}
+.stream-card.needs-player .stream-name,
+.stream-card.needs-player .stream-line {
+  opacity: 0.7;
 }

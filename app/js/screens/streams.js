@@ -71,7 +71,7 @@ export async function copyLink(url) {
   }
 }
 
-export function openExternalSheet(url, title = "Play with") {
+export function openExternalSheet(url, title = "Play with", tryHere = null) {
   const sheet = openSheet({
     title,
     content: h(
@@ -90,7 +90,21 @@ export function openExternalSheet(url, title = "Play with") {
         { type: "button", onclick: () => copyLink(url) },
         h("span", {}, "Copy link"),
         icon("link", 20)
-      )
+      ),
+      tryHere
+        ? h(
+            "button.option",
+            {
+              type: "button",
+              onclick: () => {
+                sheet.close();
+                tryHere();
+              }
+            },
+            h("span", {}, "Try playing here anyway"),
+            icon("play", 20)
+          )
+        : null
     )
   });
   return sheet;
@@ -171,7 +185,12 @@ export function renderStreams() {
   };
   const list = createStreamList(context, {
     onPlay: play,
-    onExternal: (url) => openExternalSheet(url),
+    onExternal: (url, tryHere, needsPlayer) =>
+      openExternalSheet(
+        url,
+        needsPlayer ? "Safari can't play this file" : "Play with",
+        needsPlayer ? tryHere : null
+      ),
     onUpdate: (groups, done) => {
       lastGroups = groups;
       tryAuto(groups, done);

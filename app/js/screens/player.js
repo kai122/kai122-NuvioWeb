@@ -3,10 +3,10 @@ import { back } from "../router.js";
 import { store } from "../store.js";
 import { toast } from "../sheet.js";
 import { pref, setPref } from "../prefs.js";
-import { fetchSubtitles, fetchMeta, preloadStreams } from "../addons.js";
+import { fetchSubtitles, fetchMeta, preloadStreams, fetchStreams } from "../addons.js";
 import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
-import { createStreamList } from "../streamlist.js";
+import { createStreamList, playability, choiceFor } from "../streamlist.js";
 import { parseSubtitles, findCue, languageName, stripSdh } from "../subtitles.js";
 import {
   takePlayback,
@@ -594,7 +594,17 @@ export function renderPlayer() {
         closePanel();
         switchSource(choice);
       },
-      onExternal: (url) => openExternalSheet(url)
+      onExternal: (url, tryHere, needsPlayer) =>
+        openExternalSheet(
+          url,
+          needsPlayer ? "Safari can't play this file" : "Play with",
+          needsPlayer
+            ? () => {
+                closePanel();
+                tryHere();
+              }
+            : null
+        )
     });
     openPanel(h("div.player-panel", {}, panelHeader("Sources", playback.name), list.el));
   }
@@ -607,7 +617,8 @@ export function renderPlayer() {
     Object.assign(playback, {
       url: choice.url,
       streamTitle: choice.streamTitle,
-      addonName: choice.addonName
+      addonName: choice.addonName,
+      bingeGroup: choice.bingeGroup || ""
     });
     errorBox.classList.add("is-hidden");
     video.src = playback.url;
@@ -1242,7 +1253,40 @@ export function renderPlayer() {
   });
   video.addEventListener("canplay", () => spinner.classList.remove("is-on"));
   video.addEventListener("ratechange", syncTime);
-  video.addEventListener("error", () => {
+  // A source that won't play: quietly try the next one Safari can play
+  // (up to three), before showing the error.
+  const triedUrls = new Set([playback.url]);
+  let fallbacks = 0;
+  async function tryNextSource() {
+    if (fallbacks >= 3) return false;
+    fallbacks += 1;
+    spinner.classList.add("is-on");
+    setLoading("That source didn't play. Trying another…");
+    const groups = [];
+    await fetchStreams(playback.type, playback.videoId, (g) => groups.push(g)).catch(() => {});
+    const order = (g) => (g.addon.manifest?.name === playback.addonName ? 0 : 1);
+    const next = groups
+      .sort((a, b) => order(a) - order(b))
+      .flatMap((g) => g.streams.map((stream) => ({ stream, addon: g.addon })))
+      .find(
+        ({ stream }) =>
+          safeHttpUrl(stream.url) &&
+          !triedUrls.has(safeHttpUrl(stream.url)) &&
+          playability(stream) !== "external"
+      );
+    if (!next) return false;
+    const choice = choiceFor(next);
+    triedUrls.add(choice.url);
+    toast(`Trying ${choice.addonName}: ${choice.streamTitle}`.slice(0, 90));
+    switchSource(choice);
+    video.play().catch(() => {});
+    return true;
+  }
+
+  video.addEventListener("error", async () => {
+    if (!video.getAttribute("src")) return;
+    if (!errorBox.classList.contains("is-hidden")) return;
+    if (await tryNextSource()) return;
     spinner.classList.remove("is-on");
     errorBox.classList.remove("is-hidden");
     fill(
