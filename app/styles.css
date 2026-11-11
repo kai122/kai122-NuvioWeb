@@ -162,7 +162,7 @@ img.is-broken {
 .tabbar {
   position: fixed;
   left: 50%;
-  bottom: calc(28px + var(--safe-bottom));
+  bottom: calc(10px + var(--safe-bottom));
   z-index: 50;
   display: flex;
   align-items: center;
@@ -3871,15 +3871,15 @@ body[data-route="play"] {
 
 /* Collections: folder tiles on Home and folder pages */
 .row-collection .collection-track {
-  gap: 14px;
+  gap: 10px;
 }
 .collection-tile {
   position: relative;
   flex: none;
-  width: 248px;
+  width: 207px;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #2a2a30, #1a1a1e);
   text-align: left;
   transition: transform 160ms var(--ease);
@@ -3903,10 +3903,10 @@ body[data-route="play"] {
 }
 .collection-tile-title {
   position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 12px;
-  font-size: 17px;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  font-size: 15px;
   font-weight: 800;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
 }
