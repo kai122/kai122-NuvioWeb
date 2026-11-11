@@ -46,12 +46,21 @@ export function playability(stream) {
   return "unknown";
 }
 
+// "MKV files": try them in the app first (Safari plays many MKVs, depending on
+// the formats inside), or always send them to a player app.
+export function mkvToPlayerApp() {
+  return pref("streams.mkvMode", "app") === "external";
+}
+
 // Picks the stream to auto-play from the add-on groups, or null.
 // mode: "first" | "regex"; bingeGroup: prefer the same source as last episode.
 export function autoPick(groups, { mode, pattern = "", bingeGroup = "" }) {
   const playable = groups.flatMap((group) =>
     group.streams
-      .filter((stream) => safeHttpUrl(stream.url) && playability(stream) !== "external")
+      .filter(
+        (stream) =>
+          safeHttpUrl(stream.url) && (!mkvToPlayerApp() || playability(stream) !== "external")
+      )
       .map((stream) => ({ stream, addon: group.addon }))
   );
   if (!playable.length) return null;
@@ -134,7 +143,8 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
     const name = (stream.name || addon.manifest.name).trim();
     const isCurrent = playUrl && playUrl === currentUrl;
     const size = pref("streams.sizeBadges", true) ? streamSize(stream) : "";
-    const needsPlayer = playUrl && playability(stream) === "external";
+    const isMkv = playUrl && playability(stream) === "external";
+    const needsPlayer = isMkv && mkvToPlayerApp();
     return h(
       "div.stream-card",
       {
@@ -184,7 +194,11 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
           "span.stream-badges",
           {},
           size ? h("span.stream-size", {}, size) : null,
-          needsPlayer ? h("span.stream-size.is-player", {}, "Opens in VLC / Infuse") : null
+          needsPlayer
+            ? h("span.stream-size.is-player", {}, "Opens in VLC / Infuse")
+            : isMkv
+              ? h("span.stream-size", {}, "MKV")
+              : null
         )
       ),
       playUrl
@@ -206,9 +220,10 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
     const visible = groups.filter((group) => filter === "all" || group.addon.url === filter);
     fill(
       list,
-      // Streams Safari can play come first; MKV and similar go last.
+      // With "MKV files: Open in player app", MKVs go last; otherwise the
+      // add-on's own order (usually best quality first) is kept.
       ...visible.flatMap((group) => {
-        const rank = (s) => (playability(s) === "external" ? 1 : 0);
+        const rank = (s) => (mkvToPlayerApp() && playability(s) === "external" ? 1 : 0);
         return [...group.streams]
           .map((stream, i) => ({ stream, i }))
           .sort((a, b) => rank(a.stream) - rank(b.stream) || a.i - b.i)

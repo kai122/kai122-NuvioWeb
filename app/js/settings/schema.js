@@ -772,6 +772,27 @@ export const PAGES = {
           }
         ],
         def: "cinematic"
+      },
+      {
+        t: "section",
+        title: "MKV FILES"
+      },
+      {
+        t: "select",
+        pref: "streams.mkvMode",
+        title: "MKV files",
+        sub: "Safari plays many MKV files. If one fails, the app tries another source, then offers VLC or Infuse.",
+        opts: [
+          {
+            v: "app",
+            l: "Try in the app first"
+          },
+          {
+            v: "external",
+            l: "Open in a player app"
+          }
+        ],
+        def: "app"
       }
     ],
     custom: null

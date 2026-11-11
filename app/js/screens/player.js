@@ -7,7 +7,7 @@ import { fetchSubtitles, fetchMeta, preloadStreams, fetchStreams } from "../addo
 import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { fetchSkipSegments } from "../services/skip.js";
-import { createStreamList, playability, choiceFor } from "../streamlist.js";
+import { createStreamList, playability, choiceFor, mkvToPlayerApp } from "../streamlist.js";
 import {
   findCue,
   languageName,
@@ -1414,15 +1414,17 @@ export function renderPlayer() {
     const groups = [];
     await fetchStreams(playback.type, playback.videoId, (g) => groups.push(g)).catch(() => {});
     const order = (g) => (g.addon.manifest?.name === playback.addonName ? 0 : 1);
-    const next = groups
+    // Next untried source: MP4/HLS first (most likely to play), then other
+    // MKVs (unless MKVs are set to open in a player app).
+    const candidates = groups
       .sort((a, b) => order(a) - order(b))
       .flatMap((g) => g.streams.map((stream) => ({ stream, addon: g.addon })))
-      .find(
-        ({ stream }) =>
-          safeHttpUrl(stream.url) &&
-          !triedUrls.has(safeHttpUrl(stream.url)) &&
-          playability(stream) !== "external"
-      );
+      .filter(({ stream }) => safeHttpUrl(stream.url) && !triedUrls.has(safeHttpUrl(stream.url)));
+    const isMkv = ({ stream }) => playability(stream) === "external";
+    const next =
+      candidates.find((c) => !isMkv(c)) ||
+      (mkvToPlayerApp() ? null : candidates.find(isMkv)) ||
+      null;
     if (!next) return false;
     const choice = choiceFor(next);
     triedUrls.add(choice.url);
