@@ -198,7 +198,14 @@ function heroSkeleton() {
   );
 }
 
-function openEntry({ kind, upcoming, airDate, updatedAt, released, ...entry }) {
+function airsIn(ms) {
+  const days = Math.ceil(ms / 86400000);
+  if (days <= 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  return `in ${days} Days`;
+}
+
+function openEntry({ kind, upcoming, airDate, isNew, updatedAt, released, ...entry }) {
   if (kind === "next" && upcoming) navigate(`detail/series/${encodeURIComponent(entry.metaId)}`);
   else if (kind === "next") openStreams(entry);
   else resumeEntry(entry);
@@ -222,9 +229,8 @@ function continueWatchingRows() {
         ...e,
         kind: "next",
         upcoming,
-        airDate: upcoming
-          ? new Date(air).toLocaleDateString(undefined, { day: "numeric", month: "short" })
-          : ""
+        airDate: upcoming ? airsIn(air - now) : "",
+        isNew: !upcoming && Number.isFinite(air) && now - air < 7 * 86400000
       };
     })
     .filter((e) => showUnaired || !e.upcoming);

@@ -239,6 +239,61 @@ async function pullPaged(fn, profileIndex, pageParams) {
   return all;
 }
 
+// Next Up from watch history: for each recently watched series, the episode
+// after the furthest one watched (like the native app's Continue Watching).
+const NEXT_UP_SHOWS = 15;
+async function deriveNextUp(profileId) {
+  const info = store.watchedInfo(profileId);
+  const watched = new Set(store.readForProfile(profileId, "watched", []));
+  const shows = new Map(); // contentId -> { season, episode, at }
+  for (const [id, i] of Object.entries(info)) {
+    if (!watched.has(id) || i.type !== "series" || !(Number(i.episode) > 0) || !i.contentId)
+      continue;
+    const cur = shows.get(i.contentId);
+    const further =
+      !cur || i.season > cur.season || (i.season === cur.season && i.episode > cur.episode);
+    shows.set(i.contentId, {
+      season: further ? Number(i.season) : cur.season,
+      episode: further ? Number(i.episode) : cur.episode,
+      at: Math.max(cur?.at || 0, Number(i.at) || 0)
+    });
+  }
+  const recent = [...shows.entries()].sort((a, b) => b[1].at - a[1].at).slice(0, NEXT_UP_SHOWS);
+  const map = store.readForProfile(profileId, "nextUp", {});
+  await withLimit(recent, 4, async ([contentId, last]) => {
+    const meta = await fetchMeta("series", contentId);
+    if (!meta) return;
+    const episodes = (meta.videos || [])
+      .filter((v) => v && v.id && Number(v.season) > 0)
+      .map((v) => ({ ...v, season: Number(v.season), episode: Number(v.episode ?? v.number) }))
+      .sort((a, b) => a.season - b.season || a.episode - b.episode);
+    const next = episodes.find(
+      (v) => v.season > last.season || (v.season === last.season && v.episode > last.episode)
+    );
+    if (!next || watched.has(next.id)) {
+      delete map[contentId];
+      return;
+    }
+    map[contentId] = {
+      type: "series",
+      metaId: contentId,
+      videoId: next.id,
+      name: meta.name || "",
+      poster: meta.poster || "",
+      background: meta.background || "",
+      logo: meta.logo || "",
+      year: meta.year || "",
+      season: next.season,
+      episode: next.episode,
+      episodeTitle: next.title || next.name || "",
+      thumbnail: next.thumbnail || "",
+      released: next.released || next.firstAired || "",
+      updatedAt: last.at || Date.now()
+    };
+  });
+  store.saveForProfile(profileId, "nextUp", map);
+}
+
 // Downloads everything and writes it into this app's local store.
 // Returns a summary { profiles, addons, progress, watched, library, collections }.
 export async function downloadAccount() {
@@ -488,6 +543,8 @@ async function downloadAll() {
       summary.progress += Object.keys(progress).length;
     }
   }
+
+  for (const p of profiles) await deriveNextUp(`${CLOUD_PREFIX}${p.index}`).catch(() => {});
 
   const a = readAccount();
   if (a) writeAccount({ ...a, lastSync: Date.now(), lastSummary: summary });

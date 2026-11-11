@@ -122,12 +122,17 @@ export function cwCard(entry, onOpen) {
       : (preferThumb && entry.thumbnail) || entry.background || entry.thumbnail || entry.poster;
   const blur = isNext && pref("cw.blur", false) && art === entry.thumbnail;
   let chip = remaining > 0 ? `${remaining}m left` : "Resume";
-  if (isNext) chip = entry.upcoming ? `Airs ${entry.airDate || "soon"}` : "Next Up";
+  if (isNext)
+    chip = entry.upcoming
+      ? `Airs ${entry.airDate || "soon"}`
+      : entry.isNew
+        ? "New Episode"
+        : "Next Up";
   return h(
     "button.cw-card",
     {
       type: "button",
-      class: `is-${style} ${blur ? "is-blurred" : ""} ${entry.upcoming ? "is-upcoming" : ""}`,
+      class: `is-${style} ${blur ? "is-blurred" : ""} ${entry.upcoming ? "is-upcoming" : ""} ${entry.isNew ? "is-new" : ""}`,
       onclick: () => onOpen(entry),
       "aria-label": entry.name
     },

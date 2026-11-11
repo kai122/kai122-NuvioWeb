@@ -253,9 +253,17 @@ export const store = {
     this.saveScoped("progress", map);
   },
   continueWatching() {
+    // One card per show: the episode watched most recently.
+    const seen = new Set();
     return Object.values(this.progressMap())
       .filter((entry) => entry.duration > 0 && entry.time / entry.duration < 0.95)
       .sort((a, b) => b.updatedAt - a.updatedAt)
+      .filter((entry) => {
+        const key = entry.season != null && entry.metaId ? entry.metaId : entry.videoId;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .slice(0, 20);
   },
 
