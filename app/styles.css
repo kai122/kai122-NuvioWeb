@@ -4867,3 +4867,31 @@ html.is-standalone body {
     contain-intrinsic-size: auto 211px;
   }
 }
+
+/* A stream that's slow to start or keeps buffering: ways out. */
+.player-stuck {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 70px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(560px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  text-align: center;
+}
+.player-stuck.is-hidden {
+  display: none;
+}
+.player-stuck-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+}
+.player-stuck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}

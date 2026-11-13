@@ -8,6 +8,7 @@ import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { fetchSkipSegments } from "../services/skip.js";
 import { createStreamList, playability, choiceFor, mkvToPlayerApp } from "../streamlist.js";
+import { probeStream, describeCodec } from "../mkvprobe.js";
 import {
   findCue,
   languageName,
@@ -229,6 +230,9 @@ export function renderPlayer() {
     h("span", {}, "Tap to unlock")
   );
   spinner.append(loadingText);
+  // Shown when a stream takes too long to start or keeps buffering: ways out
+  // instead of an endless spinner.
+  const stuckBox = h("div.player-stuck.is-hidden");
   root.append(
     video,
     subtitleText,
@@ -241,6 +245,7 @@ export function renderPlayer() {
     nextCard,
     segmentButton,
     spinner,
+    stuckBox,
     errorBox,
     unlockButton,
     panelHost
@@ -678,6 +683,7 @@ export function renderPlayer() {
     });
     errorBox.classList.add("is-hidden");
     video.src = playback.url;
+    watchStart();
     video.addEventListener(
       "loadedmetadata",
       () => {
@@ -1475,19 +1481,113 @@ export function renderPlayer() {
     return true;
   }
 
-  video.addEventListener("error", async () => {
-    if (!video.getAttribute("src")) return;
-    if (!errorBox.classList.contains("is-hidden")) return;
+  // --- Streams that won't start ----------------------------------------------------
+  // Safari reports most unplayable files with an error, but some (often MKVs
+  // behind a debrid redirect) just load forever. So: after a few seconds offer
+  // a way out, and if nothing has started a little later, treat it as failed.
+  const HINT_AFTER_MS = 9000;
+  const GIVE_UP_AFTER_MS = 25000;
+  const STALL_HINT_MS = 15000;
+  let hintTimer = null;
+  let giveUpTimer = null;
+  let stallTimer = null;
+  let failing = false;
+  const started = () => video.readyState >= 1; // HAVE_METADATA
+
+  function stuckActions(text) {
+    fill(
+      stuckBox,
+      h("div.player-stuck-text", {}, text),
+      h(
+        "div.player-stuck-actions",
+        {},
+        externalPlayerLinks(playback.url)
+          .slice(0, 1)
+          .map((link) => h("a.pill-button", { href: link.href }, link.label)),
+        h(
+          "button.pill-button.is-ghost",
+          {
+            type: "button",
+            onclick: () => {
+              hideStuck();
+              openSources();
+            }
+          },
+          "Other sources"
+        ),
+        h(
+          "button.pill-button.is-ghost",
+          { type: "button", onclick: () => copyLink(playback.url) },
+          "Copy link"
+        )
+      )
+    );
+    stuckBox.classList.remove("is-hidden");
+  }
+  function hideStuck() {
+    stuckBox.classList.add("is-hidden");
+  }
+  function clearWatch() {
+    clearTimeout(hintTimer);
+    clearTimeout(giveUpTimer);
+    clearTimeout(stallTimer);
+  }
+
+  function watchStart() {
+    clearWatch();
+    hideStuck();
+    failing = false;
+    const url = playback.url;
+    hintTimer = setTimeout(() => {
+      if (closed || started() || url !== playback.url) return;
+      setLoading("Still connecting…");
+      stuckActions("This stream is taking a while to start.");
+    }, HINT_AFTER_MS);
+    giveUpTimer = setTimeout(() => {
+      if (closed || started() || url !== playback.url) return;
+      cantPlay("It didn't start after 25 seconds. Safari can't play some MKV files or codecs.");
+    }, GIVE_UP_AFTER_MS);
+    preflight(url);
+  }
+
+  // MKVs: read the file's header while it loads. If it holds formats Safari
+  // can't play (e.g. DTS or TrueHD audio), don't wait for the timeout.
+  async function preflight(url) {
+    if (!/\bmkv\b/i.test(`${url} ${playback.streamTitle || ""}`)) return;
+    const result = await probeStream(url).catch(() => null);
+    if (closed || url !== playback.url || started() || !result?.mkv?.tracks?.length) return;
+    const tracks = result.mkv.tracks;
+    const videoTracks = tracks.filter((t) => t.type === "video");
+    const audio = tracks.filter((t) => t.type === "audio");
+    const bad = [
+      ...videoTracks.filter((t) => describeCodec(t.codec).ok === false),
+      ...(audio.length && audio.every((t) => describeCodec(t.codec).ok === false) ? audio : [])
+    ];
+    if (bad.length)
+      cantPlay(
+        `This file uses ${[...new Set(bad.map((t) => describeCodec(t.codec).label))].join(" and ")}, which Safari can't play.`
+      );
+  }
+
+  async function cantPlay(reason) {
+    if (failing || closed) return;
+    failing = true;
+    clearWatch();
+    hideStuck();
     if (await tryNextSource()) return;
+    showError(reason);
+  }
+
+  function showError(reason) {
     spinner.classList.remove("is-on");
     errorBox.classList.remove("is-hidden");
     fill(
       errorBox,
-      h("div.player-error-title", {}, "Safari can't play this stream"),
+      h("div.player-error-title", {}, "This stream won't play here"),
       h(
         "div.player-error-text",
         {},
-        "This is usually an MKV file or an unsupported codec. Open it in a player app, or pick another source."
+        `${reason || "This is usually an MKV file or an unsupported codec."} Open it in VLC, or pick another source.`
       ),
       h(
         "div.player-error-actions",
@@ -1504,7 +1604,33 @@ export function renderPlayer() {
       )
     );
     showControls(true);
+  }
+
+  video.addEventListener("error", () => {
+    if (!video.getAttribute("src")) return;
+    if (!errorBox.classList.contains("is-hidden")) return;
+    cantPlay("Safari can't play this file.");
   });
+  video.addEventListener("loadedmetadata", () => {
+    clearTimeout(hintTimer);
+    clearTimeout(giveUpTimer);
+    hideStuck();
+  });
+  // Playing, then stuck buffering for a long time: offer the same ways out.
+  video.addEventListener("waiting", () => {
+    clearTimeout(stallTimer);
+    if (!started()) return;
+    const at = video.currentTime;
+    stallTimer = setTimeout(() => {
+      if (closed || video.paused || Math.abs(video.currentTime - at) > 0.5) return;
+      stuckActions("Still buffering. The connection to this source is slow.");
+    }, STALL_HINT_MS);
+  });
+  for (const event of ["playing", "seeked", "pause"])
+    video.addEventListener(event, () => {
+      clearTimeout(stallTimer);
+      if (started()) hideStuck();
+    });
 
   // Keyboard (iPad keyboards and Bluetooth remotes).
   const onKey = (event) => {
@@ -1615,6 +1741,7 @@ export function renderPlayer() {
     at: Date.now()
   });
   video.src = playback.url;
+  watchStart();
   video.play().catch(() => {
     /* autoplay may need a tap; the play button is shown */
   });
@@ -1638,6 +1765,7 @@ export function renderPlayer() {
       }
       document.removeEventListener("keydown", onKey);
       closed = true;
+      clearWatch();
       // Clear the lock screen, unless the next episode's player already took it.
       if (session && (!session.metadata || session.metadata === ourMetadata)) {
         for (const name of sessionActions) setAction(name, null);
