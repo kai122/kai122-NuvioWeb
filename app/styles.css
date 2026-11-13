@@ -4552,3 +4552,128 @@ button.company-card {
   justify-content: center;
   color: #ff6b81;
 }
+
+/* --- Home Screen app -------------------------------------------------------- */
+/* Opened from the Home Screen icon: no page bounce or text callouts, so it
+   feels like an installed app. */
+html.is-standalone,
+html.is-standalone body {
+  overscroll-behavior: none;
+}
+
+html.is-standalone body {
+  -webkit-touch-callout: none;
+}
+
+.install-banner {
+  position: fixed;
+  top: calc(14px + var(--safe-top));
+  left: 50%;
+  z-index: 260;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(520px, calc(100vw - 32px));
+  padding: 10px 10px 10px 12px;
+  border-radius: 20px;
+  background: rgba(36, 36, 38, 0.94);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  opacity: 0;
+  transform: translate(-50%, -12px);
+  transition:
+    opacity 250ms var(--ease),
+    transform 250ms var(--ease);
+}
+
+.install-banner.is-open {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.install-banner.is-leaving {
+  opacity: 0;
+  transform: translate(-50%, -12px);
+}
+
+.install-banner-icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+}
+
+.install-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.install-banner-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.install-banner-sub {
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.install-banner-how {
+  flex-shrink: 0;
+  height: 34px;
+  font-size: 14px;
+}
+
+.install-banner-close {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+}
+
+.install-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 6px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.install-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.install-step-num {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.install-share-icon {
+  vertical-align: -3px;
+  color: #0a84ff;
+}
+
+.install-note {
+  margin-top: 8px;
+}
+
+.set-about-install {
+  margin-top: 14px;
+}
+
+.set-about-mode {
+  margin-top: 10px;
+}

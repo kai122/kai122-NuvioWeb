@@ -18,6 +18,7 @@ import {
 } from "../services/nuvioAccount.js";
 import { parseCollectionsFile } from "../screens/collections.js";
 import { openSignIn, runDownload, summaryText } from "../signin.js";
+import { isStandalone, openInstallGuide } from "../install.js";
 
 const VERSION = "1.0 touch";
 
@@ -673,7 +674,14 @@ function customAbout() {
       {},
       h("img.set-about-logo", { src: "../assets/brand/app_logo_wordmark.png", alt: "Nuvio" }),
       h("div.muted", {}, `Version ${VERSION}`),
-      h("div.muted", {}, "Made with ❤️ by Tapframe and friends")
+      h("div.muted", {}, "Made with ❤️ by Tapframe and friends"),
+      isStandalone()
+        ? h("div.muted.set-about-mode", {}, "Running as a Home Screen app")
+        : h(
+            "button.pill-button.set-about-install",
+            { type: "button", onclick: () => openInstallGuide() },
+            "Add to Home Screen"
+          )
     )
   ];
 }

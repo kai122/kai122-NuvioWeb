@@ -68,6 +68,10 @@ jobs:
           # The touch app reads its TMDB key from env.js. Like the classic
           # app's nuvio.env.js, this ends up in the public site.
           node -e 'process.stdout.write("window.NUVIO_TOUCH_ENV = " + JSON.stringify({ tmdbKey: process.env.TMDB_API_KEY || "" }) + ";\n")' > dist/app/env.js
+          # A new service worker version per deploy, so the Home Screen app
+          # picks up the update on its next launch.
+          sed -i "s/const VERSION = \"dev\";/const VERSION = \"${GITHUB_SHA::12}\";/" dist/app/sw.js
+          grep -q "const VERSION = \"${GITHUB_SHA::12}\";" dist/app/sw.js
 
       - uses: actions/configure-pages@v5
 

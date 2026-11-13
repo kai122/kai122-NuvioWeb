@@ -18,6 +18,7 @@ import { pref } from "./prefs.js";
 import { startPlayback } from "./screens/streams.js";
 import { checkReleaseAlerts } from "./services/alerts.js";
 import { account, downloadAccount } from "./services/nuvioAccount.js";
+import { setupAppMode } from "./install.js";
 
 const TAB_ROUTES = new Set(["home", "search", "library", "profile"]);
 const view = h("main.view");
@@ -237,4 +238,5 @@ function runLaunchTasks() {
   setTimeout(() => checkReleaseAlerts(), 3000);
 }
 
+setupAppMode();
 boot();
