@@ -7,6 +7,7 @@ import { navigate, back } from "../router.js";
 import { pref } from "../prefs.js";
 import { tmdbAvailable, tmdbSourceItems } from "../services/tmdb.js";
 import { openTmdbTitle } from "./detail.js";
+import { coverSrc, warmCovers } from "../covers.js";
 
 export function visibleCollections() {
   const hidden = new Set(pref("collections.hidden", []));
@@ -29,9 +30,11 @@ function folderTile(collection, folder) {
     h("span.collection-tile-title", {}, folder.title)
   );
   if (cover) {
-    const art = img(cover, "collection-tile-img", "");
+    // The shrunk, cached copy of the cover (see covers.js), not the original.
+    const art = img("", "collection-tile-img", "");
     // A cover that fails to load would leave a blank tile: show the name.
     art.addEventListener("error", () => tile.classList.remove("hide-title"), { once: true });
+    coverSrc(cover).then((src) => (art.src = src));
     tile.prepend(art);
   }
   return tile;
@@ -39,6 +42,12 @@ function folderTile(collection, folder) {
 
 // Home rows: one row of folder tiles per collection.
 export function collectionSections({ pinned }) {
+  if (pinned)
+    warmCovers(
+      visibleCollections().flatMap((c) =>
+        c.folders.map((f) => f.coverImageUrl || f.coverImage || "")
+      )
+    );
   return visibleCollections()
     .filter((c) => (c.pinToTop !== false) === pinned)
     .map((c) =>

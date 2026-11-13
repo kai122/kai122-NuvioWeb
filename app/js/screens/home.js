@@ -128,11 +128,24 @@ function buildHero(items) {
       .forEach((dot, d) => dot.classList.toggle("is-active", d === index));
   }
 
+  // While the page is being scrolled, a backdrop swap would composite two
+  // full-screen layers mid-flick; wait for the scroll to settle instead.
+  let scrollSettle = null;
+  let scrolling = false;
+  const onPageScroll = () => {
+    scrolling = true;
+    clearTimeout(scrollSettle);
+    scrollSettle = setTimeout(() => (scrolling = false), 350);
+  };
+  window.addEventListener("scroll", onPageScroll, { passive: true });
+
   let onScreen = true;
   function restart() {
     clearInterval(timer);
     if (onScreen && !prefersReducedMotion() && items.length > 1)
-      timer = setInterval(() => show(index + 1), HERO_INTERVAL_MS);
+      timer = setInterval(() => {
+        if (!scrolling) show(index + 1);
+      }, HERO_INTERVAL_MS);
   }
   // The carousel rests while it's scrolled out of view or the app is hidden.
   const visibility =
@@ -178,8 +191,10 @@ function buildHero(items) {
     el: hero,
     stop: () => {
       clearInterval(timer);
+      clearTimeout(scrollSettle);
       visibility?.disconnect();
       document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("scroll", onPageScroll);
     }
   };
 }
@@ -285,7 +300,7 @@ export function renderHome() {
               entry.target.__load?.();
             }
           },
-          { rootMargin: "600px 0px" }
+          { rootMargin: "1200px 0px" }
         )
       : null;
 
@@ -338,7 +353,19 @@ export function renderHome() {
                 section.remove();
                 return;
               }
-              fill(track, ...items.slice(0, 30).map((item) => posterCard(item)));
+              const cards = items.slice(0, 30).map((item) => posterCard(item));
+              // The first few are what's seen while scrolling past: fetch them
+              // ahead instead of when they enter the screen.
+              for (const card of cards.slice(0, 6)) {
+                const image = card.querySelector("img");
+                if (image) image.loading = "eager";
+              }
+              // Two batches, so a row filling in never blocks a whole frame.
+              fill(track, ...cards.slice(0, 12));
+              if (cards.length > 12) {
+                const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 120));
+                idle(() => track.append(...cards.slice(12)));
+              }
               const heroAllowed = showHero && (!heroCatalogs || heroCatalogs.includes(entry.key));
               if (!hero && heroAllowed) {
                 const heroItems = items.filter((item) => item.background).slice(0, HERO_COUNT);

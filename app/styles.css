@@ -372,7 +372,6 @@ img.is-broken {
   background-position: center 20%;
   background-size: cover;
   opacity: 0;
-  will-change: opacity;
   transition: opacity 700ms var(--ease);
 }
 
@@ -4848,5 +4847,23 @@ html.is-standalone body {
   .player-toolbar .player-icon {
     flex-shrink: 0;
     width: 36px;
+  }
+}
+
+/* --- Scrolling performance ----------------------------------------------------
+   Rows that are off the screen are neither laid out nor painted (Safari 18+),
+   which is most of what makes a long Home scroll like the native app. The
+   remembered size (auto) keeps the scrollbar and positions stable; the length
+   is only used before a row has been shown once. */
+@supports (content-visibility: auto) {
+  .screen-home .row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 309px;
+  }
+  .screen-home .row-collection {
+    contain-intrinsic-size: auto 189px;
+  }
+  .screen-home .row-cw {
+    contain-intrinsic-size: auto 211px;
   }
 }
