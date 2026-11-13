@@ -19,6 +19,7 @@ import { startPlayback } from "./screens/streams.js";
 import { checkReleaseAlerts } from "./services/alerts.js";
 import { account, downloadAccount } from "./services/nuvioAccount.js";
 import { setupAppMode } from "./install.js";
+import { syncPushShows } from "./services/push.js";
 
 const TAB_ROUTES = new Set(["home", "search", "library", "profile"]);
 const view = h("main.view");
@@ -217,6 +218,30 @@ async function boot() {
   if (store.activeProfileId) runLaunchTasks();
 }
 
+// Pull the latest from the Nuvio account (what was watched or saved on the
+// other devices), then rebuild Home.
+function refreshFromAccount() {
+  if (!account()) return;
+  downloadAccount()
+    .then(() => {
+      homeScreen?.destroy?.();
+      homeScreen = null;
+      // Rebuild Home now only if it won't jump while someone is scrolling it.
+      if (parseRoute().name === "home" && window.scrollY < 80) show(parseRoute(), "forward");
+    })
+    .catch(() => {});
+}
+
+// Coming back to the app after a while (Home Screen apps stay open in the
+// background for days): sync again so it matches the other devices.
+const RESUME_SYNC_MS = 3 * 60 * 1000;
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible" || !launchTasksDone || !store.activeProfileId) return;
+  if (parseRoute().name === "play") return;
+  const last = account()?.lastSync || 0;
+  if (Date.now() - last > RESUME_SYNC_MS) refreshFromAccount();
+});
+
 // Once per launch, after a profile is active.
 let launchTasksDone = false;
 function runLaunchTasks() {
@@ -224,19 +249,16 @@ function runLaunchTasks() {
   launchTasksDone = true;
   if (parseRoute().name !== "play") setTimeout(offerResume, 600);
   // Signed in to Nuvio: refresh from the account once per launch.
-  if (account()) {
-    setTimeout(() => {
-      downloadAccount()
-        .then(() => {
-          homeScreen?.destroy?.();
-          homeScreen = null;
-          if (parseRoute().name === "home") show(parseRoute(), "forward");
-        })
-        .catch(() => {});
-    }, 1500);
-  }
+  if (account()) setTimeout(refreshFromAccount, 1500);
   setTimeout(() => checkReleaseAlerts(), 3000);
+  syncPushShows({ delay: 8000 });
 }
+
+// Tapping a notification while the app is open: go to that show.
+navigator.serviceWorker?.addEventListener("message", (event) => {
+  const hash = String(event.data?.hash || "");
+  if (/^#\/[\w/.%-]*$/.test(hash)) location.hash = hash;
+});
 
 setupAppMode();
 boot();

@@ -1907,28 +1907,29 @@ export const PAGES = {
     rows: [
       {
         t: "section",
-        title: "ALERTS"
+        title: "NEW EPISODES"
       },
       {
         t: "toggle",
         pref: "notif.episodes",
-        title: "Episode release alerts",
-        sub: "Checks your saved shows each time you open the app and alerts you about new episodes. On iPad, alerts need the app added to your Home Screen.",
+        title: "Check when the app opens",
+        sub: "Looks for new episodes of your saved shows each time you open Nuvio.",
         def: false
       },
       {
         t: "section",
-        title: "TEST"
+        title: "ALERTS SERVICE"
       },
       {
-        t: "action",
-        id: "testNotif",
-        title: "Send Test Notification",
-        sub: null,
-        danger: false
+        t: "text",
+        pref: "notif.relay",
+        title: "Alerts service address",
+        sub: "Your alerts worker, e.g. https://nuvio-alerts.yourname.workers.dev. Setup steps: relay/README.md in the project.",
+        ph: "https://nuvio-alerts.yourname.workers.dev",
+        secret: false
       }
     ],
-    custom: null
+    custom: "notifications"
   },
   advanced: {
     id: "advanced",

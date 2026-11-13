@@ -1,7 +1,12 @@
 // "Sign in with Nuvio" sheet, used by Settings and the profile picker.
 import { h, icon, fill, safeHttpUrl } from "./dom.js";
 import { openSheet, toast } from "./sheet.js";
-import { startSignIn, downloadAccount } from "./services/nuvioAccount.js";
+import {
+  startSignIn,
+  downloadAccount,
+  account,
+  signOutEverywhere
+} from "./services/nuvioAccount.js";
 
 export function summaryText(sum) {
   if (!sum) return "";
@@ -76,4 +81,42 @@ export function openSignIn({ onDone, onFail } = {}) {
       } else onFail?.();
     })
     .catch((error) => fill(status, h("span", {}, `Couldn't sign in: ${error.message}`)));
+}
+
+// "Sign Out" confirmation, used by Settings and the profile picker.
+export function confirmSignOut({ onDone } = {}) {
+  const acct = account();
+  if (!acct) return;
+  const sheet = openSheet({
+    title: "Sign out of Nuvio?",
+    content: h(
+      "div.form",
+      {},
+      h(
+        "p.form-hint",
+        {},
+        `Signed in as ${acct.email || "your Nuvio account"}. Your profiles, add-ons, library and progress stay safe in your account and are removed from this device. Sign in again any time to bring them back.`
+      ),
+      h(
+        "div.form-actions",
+        {},
+        h("button.pill-button", { type: "button", onclick: () => sheet.close() }, "Cancel"),
+        h(
+          "button.play-button.is-danger",
+          {
+            type: "button",
+            onclick: async (event) => {
+              event.currentTarget.disabled = true;
+              await signOutEverywhere();
+              sheet.close();
+              toast("Signed out");
+              window.dispatchEvent(new Event("nuvio:addons-changed"));
+              onDone?.();
+            }
+          },
+          "Sign Out"
+        )
+      )
+    )
+  });
 }

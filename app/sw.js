@@ -86,3 +86,89 @@ self.addEventListener("fetch", (event) => {
   if (!isOwnFile(url)) return;
   event.respondWith(networkFirst(request));
 });
+
+// ---- New-episode notifications ------------------------------------------------
+// The alerts worker sends an empty push; ask it what's new and show it.
+const CONFIG_CACHE = "nuvio-config";
+
+async function relayUrl() {
+  const cache = await caches.open(CONFIG_CACHE);
+  const hit = await cache.match("alerts-relay");
+  return hit ? (await hit.text()).trim() : "";
+}
+
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function pendingItems() {
+  const relay = await relayUrl();
+  const sub = await self.registration.pushManager.getSubscription();
+  if (!relay || !sub) return [];
+  const id = await sha256Hex(sub.endpoint);
+  const response = await fetch(`${relay}/pending?id=${id}`, { cache: "no-store" });
+  const data = response.ok ? await response.json() : null;
+  return Array.isArray(data?.items) ? data.items : [];
+}
+
+const icon = new URL("../assets/pwa/icon-192.png", self.registration.scope).href;
+
+self.addEventListener("push", (event) => {
+  event.waitUntil(
+    (async () => {
+      let items = [];
+      try {
+        items = await pendingItems();
+      } catch (_) {
+        /* show the general message below */
+      }
+      // iOS requires a visible notification for every push.
+      if (!items.length) {
+        return self.registration.showNotification("Nuvio", {
+          body: "New episodes are out for your shows.",
+          icon,
+          tag: "nuvio-new",
+          data: { hash: "#/home" }
+        });
+      }
+      const shown = items.slice(-4);
+      for (const item of shown) {
+        if (item.test) {
+          await self.registration.showNotification("Nuvio", {
+            body: "Notifications are working.",
+            icon,
+            tag: "nuvio-test",
+            data: { hash: "#/home" }
+          });
+          continue;
+        }
+        const label = `S${item.season} E${item.episode}${item.title ? ` · ${item.title}` : ""}`;
+        await self.registration.showNotification(`New episode: ${item.name || "Your show"}`, {
+          body: label,
+          icon,
+          tag: `nuvio-${item.id}`,
+          data: { hash: `#/detail/series/${encodeURIComponent(item.id)}` }
+        });
+      }
+    })()
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const hash = String(event.notification.data?.hash || "#/home");
+  const target = new URL(hash.startsWith("#/") ? hash : "#/home", self.registration.scope).href;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windows) {
+        if (client.url.startsWith(self.registration.scope)) {
+          await client.focus();
+          return client.navigate(target).catch(() => client.postMessage({ hash }));
+        }
+      }
+      return self.clients.openWindow(target);
+    })()
+  );
+});

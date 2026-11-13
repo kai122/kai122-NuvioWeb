@@ -20,3 +20,44 @@ It's free on Cloudflare's free plan and takes about five minutes.
 
 The relay only forwards IntroDB's `/segments` lookups (IMDb id, season,
 episode). It stores nothing and caches answers for a day.
+
+---
+
+# Alerts service (new-episode notifications while the app is closed)
+
+This tiny worker checks your shows every few hours and sends a notification
+to your iPhone, iPad or computer when a new episode comes out. It's free on
+Cloudflare's free plan and takes about ten minutes, once.
+
+It stores only what it needs: each device's push address and the IMDb ids
+and names of the shows it should watch. No account, email or history.
+
+1. Make a free account at <https://dash.cloudflare.com/sign-up> (skip if you
+   already made one for the IntroDB relay).
+2. **Storage:** in the dashboard open **Storage & Databases → KV → Create**.
+   Name it `nuvio-alerts` and click **Add**.
+3. **Worker:** **Compute (Workers) → Workers & Pages → Create → Create
+   Worker** (start from "Hello World"). Name it `nuvio-alerts` and click
+   **Deploy**. Click **Edit code**, delete everything, paste the contents of
+   [`alerts-worker.js`](alerts-worker.js), and click **Deploy**.
+4. **Connect the storage:** in the worker open **Settings → Bindings → Add →
+   KV namespace**. Variable name `SUBS`, namespace `nuvio-alerts`. Save.
+5. **Keys:** open `https://nuvio-alerts.yourname.workers.dev/keys` in Safari.
+   It shows two values. In the worker go to **Settings → Variables and
+   Secrets → Add**, type **Secret**:
+   - `VAPID_PUBLIC_KEY` = the `publicKey` value
+   - `VAPID_PRIVATE_KEY` = the `privateKey` value
+
+   Deploy when asked. (Opening `/keys` again now says the keys are set.)
+
+6. **Schedule:** **Settings → Trigger Events → Add → Cron Triggers**, enter
+   `17 */3 * * *` (every 3 hours) and save.
+7. Check it: `https://nuvio-alerts.yourname.workers.dev/health` should show
+   `"configured":true`.
+8. **In the app:** open Nuvio **from your Home Screen**, go to **Settings →
+   System → Notifications**, set **Alerts service address** to
+   `https://nuvio-alerts.yourname.workers.dev`, then turn on **Notifications
+   while Nuvio is closed** and allow notifications. Tap **Send Test
+   Notification** to check. Do this on each device you want alerts on.
+
+The show list updates by itself when you save shows or watch something new.

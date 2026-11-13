@@ -4677,3 +4677,176 @@ html.is-standalone body {
 .set-about-mode {
   margin-top: 10px;
 }
+
+/* --- Phones (iPhone, portrait and landscape) ---------------------------------
+   Kept last so it wins over the iPad measurements above. */
+@media (max-width: 700px), (max-height: 500px) and (max-width: 1000px) {
+  .detail-body {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .detail-section .row-track {
+    margin: 0 -20px;
+    padding: 0 20px 4px;
+    scroll-padding: 0 20px;
+  }
+
+  .screen-discover .page-title,
+  .screen-library .page-title {
+    font-size: 32px;
+  }
+
+  /* Settings: one level at a time. */
+  .screen-settings.is-phone {
+    display: block;
+  }
+  .screen-settings.is-phone .settings-sidebar {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: calc(18px + var(--safe-top)) 16px calc(120px + var(--safe-bottom));
+    background: none;
+    box-shadow: none;
+  }
+  .screen-settings.is-phone:not(.is-phone-list) .settings-sidebar,
+  .screen-settings.is-phone-list .settings-content {
+    display: none;
+  }
+  .screen-settings.is-phone .settings-big-title {
+    margin: 0 4px 16px;
+    font-size: 34px;
+  }
+  .screen-settings.is-phone .settings-nav {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    overflow: visible;
+    border-radius: 16px;
+    background: var(--surface-card);
+    box-shadow: none;
+  }
+  .screen-settings.is-phone .settings-nav-item {
+    width: 100%;
+    height: 54px;
+    color: #fff;
+  }
+  .screen-settings.is-phone .settings-nav-item.is-selected {
+    background: none;
+    font-weight: 500;
+  }
+  .screen-settings.is-phone .settings-nav-icon {
+    background: rgba(255, 255, 255, 0.08);
+  }
+  .screen-settings.is-phone .settings-nav-label {
+    flex: 1;
+  }
+  .screen-settings.is-phone .settings-nav-item > .icon:last-child {
+    color: var(--text-3);
+  }
+  .screen-settings.is-phone .settings-nav-item.is-danger {
+    color: #ff6961;
+  }
+  .settings-phone-hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    margin-bottom: 6px;
+    padding: 12px 8px 14px;
+    border-bottom: 0.5px solid var(--hairline);
+    text-align: left;
+  }
+  .settings-phone-hero .settings-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .settings-phone-hero .settings-sub {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .screen-settings.is-phone .settings-content {
+    max-width: none;
+    padding: calc(18px + var(--safe-top)) 16px calc(130px + var(--safe-bottom));
+  }
+  .screen-settings.is-phone .settings-heading-row {
+    justify-content: flex-start;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  /* Install banner: one line on a phone. */
+  .install-banner-sub {
+    display: none;
+  }
+  .install-banner {
+    top: calc(8px + var(--safe-top));
+  }
+
+  .picker-grid {
+    gap: 24px 28px;
+  }
+  .picker-card,
+  .picker-avatar {
+    width: 96px;
+  }
+  .picker-avatar {
+    height: 96px;
+  }
+}
+
+@media (max-width: 700px) {
+  /* Discover / Library: three posters per row, like the native iPhone app. */
+  .screen-discover .poster-grid,
+  .screen-library .poster-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 10px;
+  }
+}
+
+@media (max-height: 500px) and (max-width: 1000px) {
+  .screen-discover .poster-grid,
+  .screen-library .poster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  }
+}
+
+.episode-search-wrap {
+  min-width: 0;
+}
+.player-time-pill {
+  white-space: nowrap;
+}
+
+/* Small phones (iPhone SE and similar) */
+@media (max-width: 380px) {
+  .segmented {
+    max-width: calc(100vw - 2 * var(--margin));
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .segment {
+    flex-shrink: 0;
+    padding: 0 12px;
+  }
+  .player-time-pill {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 380px) {
+  .player-toolbar-row {
+    gap: 6px;
+  }
+  .player-toolbar {
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .player-toolbar .player-icon {
+    flex-shrink: 0;
+    width: 36px;
+  }
+}

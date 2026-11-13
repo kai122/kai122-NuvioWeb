@@ -48,16 +48,20 @@ function emailOf(token) {
 async function call(path, { method = "POST", body, token = KEY } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
+  const payload = body === undefined ? undefined : JSON.stringify(body);
   try {
     const response = await fetch(BASE + path, {
       method,
       signal: controller.signal,
+      // While the app is being closed, let a small upload finish anyway.
+      // (Browsers cap keepalive bodies at 64 KB in total, so stay well under.)
+      keepalive: document.visibilityState === "hidden" && !!payload && payload.length < 16000,
       headers: {
         "Content-Type": "application/json",
         apikey: KEY,
         Authorization: `Bearer ${token}`
       },
-      body: body === undefined ? undefined : JSON.stringify(body)
+      body: payload
     });
     const text = await response.text();
     let data = null;
@@ -296,13 +300,22 @@ async function deriveNextUp(profileId) {
 
 // Downloads everything and writes it into this app's local store.
 // Returns a summary { profiles, addons, progress, watched, library, collections }.
-export async function downloadAccount() {
+let running = null;
+export function downloadAccount() {
+  // One download at a time: a second request joins the one in progress.
+  if (running) return running;
   downloading = true;
-  try {
-    return await downloadAll();
-  } finally {
-    downloading = false;
-  }
+  running = (async () => {
+    try {
+      // Waiting uploads are not sent first on purpose: the download decides
+      // what was finished or removed elsewhere, and they go up after it.
+      return await downloadAll();
+    } finally {
+      downloading = false;
+      running = null;
+    }
+  })();
+  return running;
 }
 
 async function downloadAll() {
@@ -806,8 +819,67 @@ const PUSHERS = {
   library: pushLibrary,
   addons: pushAddons
 };
-const timers = new Map();
+const timers = new Map(); // key -> { timer, run }
 export const syncStatus = { lastPush: 0, lastError: "" };
+
+function runPush(kind, profileId) {
+  return PUSHERS[kind](profileId)
+    .then(() => {
+      syncStatus.lastPush = Date.now();
+      syncStatus.lastError = "";
+    })
+    .catch((error) => {
+      syncStatus.lastError = `${kind}: ${error.message}`;
+    });
+}
+
+// Sends any changes still waiting for their upload, right now.
+export function flushUploads() {
+  const runs = [...timers.values()].map(({ timer, run }) => {
+    clearTimeout(timer);
+    return run();
+  });
+  timers.clear();
+  return Promise.all(runs);
+}
+
+// Closing or switching away from the app: upload straight away so the other
+// devices see the change.
+// (Not mid-download: those uploads must wait for the download to finish.)
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && !downloading) flushUploads();
+});
+window.addEventListener("pagehide", () => !downloading && flushUploads());
+
+// Signing out: upload what's pending, end the session, and remove the
+// account's profiles and their data from this device. Everything stays in
+// the Nuvio account and comes back when signing in again.
+export async function signOutEverywhere() {
+  await Promise.race([flushUploads(), new Promise((r) => setTimeout(r, 5000))]);
+  const cloudIds = store
+    .profiles()
+    .map((p) => String(p.id))
+    .filter((id) => id.startsWith(CLOUD_PREFIX));
+  await signOut();
+  for (const id of cloudIds) store.removeProfile(id);
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("nuvioTouch.") && cloudIds.some((id) => key.endsWith(`.${id}`)))
+        localStorage.removeItem(key);
+    }
+    const active = String(
+      store.activeProfileId || sessionStorage.getItem("nuvioTouch.activeProfile") || ""
+    );
+    if (
+      active.startsWith(CLOUD_PREFIX) ||
+      String(store.lastProfileId() || "").startsWith(CLOUD_PREFIX)
+    )
+      store.forgetActiveProfile();
+  } catch (_) {
+    /* storage blocked */
+  }
+  return cloudIds.length;
+}
 
 // Changes on a Nuvio profile are uploaded a few seconds later.
 window.addEventListener("nuvio:data", (event) => {
@@ -817,19 +889,13 @@ window.addEventListener("nuvio:data", (event) => {
     return;
   if (!pref("nuvio.upload", true)) return;
   const key = `${profileId}|${kind}`;
-  clearTimeout(timers.get(key));
-  timers.set(
-    key,
-    setTimeout(() => {
+  clearTimeout(timers.get(key)?.timer);
+  const run = () => runPush(kind, profileId);
+  timers.set(key, {
+    run,
+    timer: setTimeout(() => {
       timers.delete(key);
-      push(profileId)
-        .then(() => {
-          syncStatus.lastPush = Date.now();
-          syncStatus.lastError = "";
-        })
-        .catch((error) => {
-          syncStatus.lastError = `${kind}: ${error.message}`;
-        });
+      run();
     }, 4000)
-  );
+  });
 });

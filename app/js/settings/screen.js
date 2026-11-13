@@ -9,16 +9,19 @@ import { listCatalogs } from "../addons.js";
 import { sectionAddons } from "../screens/profile.js";
 import { pref, setPref, clearPrefs, allPrefs, importPrefs } from "../prefs.js";
 import { CATEGORIES, PAGES, THEMES } from "./schema.js";
-import {
-  account,
-  signOut,
-  pushCollections,
-  CLOUD_PREFIX,
-  syncStatus
-} from "../services/nuvioAccount.js";
+import { account, pushCollections, CLOUD_PREFIX, syncStatus } from "../services/nuvioAccount.js";
 import { parseCollectionsFile } from "../screens/collections.js";
-import { openSignIn, runDownload, summaryText } from "../signin.js";
+import { openSignIn, runDownload, summaryText, confirmSignOut } from "../signin.js";
 import { isStandalone, openInstallGuide } from "../install.js";
+import {
+  pushSupport,
+  currentSubscription,
+  enablePush,
+  disablePush,
+  testPush,
+  relayUrl,
+  watchedShows
+} from "../services/push.js";
 
 const VERSION = "1.0 touch";
 
@@ -76,6 +79,9 @@ function rowShell({ title, sub, trailing, onClick, danger, lead = null }) {
     trailing === undefined ? (onClick ? icon("chevronRight", 22) : null) : trailing
   );
 }
+
+export const isPhoneWidth = () =>
+  window.matchMedia("(max-width: 700px), (max-height: 500px) and (max-width: 1000px)").matches;
 
 function groupCard(rows) {
   return h("div.settings-card", {}, rows);
@@ -465,6 +471,79 @@ function confirmReset() {
 }
 
 // ---- Custom pages -----------------------------------------------------------
+function customNotifications(ctx) {
+  const card = h("div.settings-card", {}, h("div.settings-loading", {}, h("span.spinner")));
+  const support = pushSupport();
+  const shows = watchedShows().length;
+  const busy = (fn) => async () => {
+    try {
+      await fn();
+    } catch (error) {
+      toast(error.message || "Something went wrong");
+    }
+    ctx.refresh();
+  };
+  (async () => {
+    const sub = await currentSubscription();
+    const rows = [];
+    if (support === "homescreen") {
+      rows.push(
+        rowShell({
+          title: "Notifications while Nuvio is closed",
+          sub: "Apple only allows these for the Home Screen app. Add Nuvio to your Home Screen, open it from there, then turn this on.",
+          onClick: () => openInstallGuide()
+        })
+      );
+    } else if (support !== "ok") {
+      rows.push(
+        rowShell({
+          title: "Notifications while Nuvio is closed",
+          sub: "This browser can't receive notifications.",
+          trailing: null
+        })
+      );
+    } else {
+      rows.push(
+        rowShell({
+          title: "Notifications while Nuvio is closed",
+          sub: sub
+            ? `On. Watching ${shows} show${shows === 1 ? "" : "s"} from your library and Continue Watching.`
+            : relayUrl()
+              ? "Get a notification when a new episode of your shows comes out."
+              : "Set the alerts service address below first.",
+          trailing: switchEl(
+            !!sub,
+            (on) =>
+              busy(async () => {
+                if (on) {
+                  const n = await enablePush();
+                  toast(`Notifications on for ${n} show${n === 1 ? "" : "s"}`);
+                } else {
+                  await disablePush();
+                  toast("Notifications off");
+                }
+              })(),
+            "Notifications while Nuvio is closed"
+          )
+        })
+      );
+      if (sub)
+        rows.push(
+          rowShell({
+            title: "Send Test Notification",
+            sub: "Arrives in a few seconds, even if you close the app.",
+            onClick: busy(async () => {
+              await testPush();
+              toast("Test sent");
+            })
+          })
+        );
+    }
+    fill(card, ...rows);
+  })();
+  return [h("div.set-section-label", {}, "WHILE THE APP IS CLOSED"), card];
+}
+
 function customAccount(ctx) {
   const profile = store.activeProfile();
   const acct = account();
@@ -525,15 +604,11 @@ function customAccount(ctx) {
           )
         }),
         rowShell({
-          title: "Sign out of Nuvio",
-          sub: "Stops syncing. Downloaded profiles stay on this iPad until you delete them.",
+          title: "Sign Out",
+          sub: "Removes your Nuvio profiles from this device. They stay safe in your account.",
           danger: true,
           trailing: null,
-          onClick: async () => {
-            await signOut();
-            toast("Signed out of Nuvio");
-            ctx.refresh();
-          }
+          onClick: () => confirmSignOut({ onDone: () => navigate("profiles") })
         })
       ]),
       h(
@@ -799,12 +874,25 @@ function pageBody(page, ctx) {
   }
   flush();
   if (page.custom === "about") out.push(...customAbout());
+  if (page.custom === "notifications") out.push(...customNotifications(ctx));
   return out;
 }
 
 function categoryBody(cat, ctx) {
+  const acct = cat.id === "you" ? account() : null;
   return [
     groupCard(cat.rows.map((row) => renderRow(row, { ...ctx, categoryPage: true }))),
+    acct
+      ? groupCard([
+          rowShell({
+            title: "Sign Out",
+            sub: acct.email ? `Signed in as ${acct.email}` : "Signed in with Nuvio",
+            danger: true,
+            trailing: null,
+            onClick: () => confirmSignOut({ onDone: () => navigate("profiles") })
+          })
+        ])
+      : null,
     h(
       "div.set-footer",
       {},
@@ -824,29 +912,67 @@ export function renderSettings([initial] = []) {
     content
   );
   const known = (id) => CATEGORIES.some((c) => c.id === id) || !!PAGES[id];
-  const target = known(initial) ? initial : "look";
+  // Phones show one level at a time, like the native iPhone app: the list of
+  // sections first, then the chosen section full width with a back button.
+  const phone = isPhoneWidth();
+  const target = known(initial) ? initial : phone ? null : "look";
+  root.classList.toggle("is-phone", phone);
+  root.classList.toggle("is-phone-list", phone && !target);
   const ctx = {
     go: (pageId) => navigate(`profile/${pageId}`),
     refresh: () => draw()
   };
 
   function draw() {
-    const category = CATEGORIES.find((c) => c.id === target) || pageCategory(target);
+    const category = target
+      ? CATEGORIES.find((c) => c.id === target) || pageCategory(target)
+      : null;
+    const acct = account();
     fill(
       nav,
+      phone && !target
+        ? h(
+            "button.settings-phone-hero",
+            { type: "button", onclick: () => navigate("profile/account") },
+            avatarEl(store.activeProfile(), 56),
+            h(
+              "span.settings-copy",
+              {},
+              h("span.profile-hero-name", {}, store.activeProfile()?.name || ""),
+              h("span.settings-sub", {}, acct ? acct.email || "Nuvio account" : "Not signed in")
+            ),
+            icon("chevronRight", 22)
+          )
+        : null,
       ...CATEGORIES.map((c) =>
         h(
           "button.settings-nav-item",
           {
             type: "button",
-            class: c.id === category.id ? "is-selected" : "",
-            onclick: () => navigate(`profile/${c.id}`, { replace: true })
+            class: c.id === category?.id ? "is-selected" : "",
+            onclick: () => navigate(`profile/${c.id}`, { replace: !phone })
           },
           h("span.settings-nav-icon", {}, icon(c.icon, 20)),
-          h("span", {}, c.label)
+          h("span.settings-nav-label", {}, c.label),
+          phone ? icon("chevronRight", 22) : null
         )
-      )
+      ),
+      phone && !target && acct
+        ? h(
+            "button.settings-nav-item.is-danger",
+            {
+              type: "button",
+              onclick: () => confirmSignOut({ onDone: () => navigate("profiles") })
+            },
+            h("span.settings-nav-icon", {}, icon("person", 20)),
+            h("span.settings-nav-label", {}, "Sign Out")
+          )
+        : null
     );
+    if (!target) {
+      fill(content);
+      return;
+    }
     const page = PAGES[target];
     if (page) {
       fill(
@@ -864,7 +990,22 @@ export function renderSettings([initial] = []) {
         ...pageBody(page, ctx)
       );
     } else {
-      fill(content, h("h2.settings-heading", {}, category.label), ...categoryBody(category, ctx));
+      fill(
+        content,
+        phone
+          ? h(
+              "div.settings-heading-row",
+              {},
+              h(
+                "button.set-back",
+                { type: "button", "aria-label": "Back", onclick: () => back("profile") },
+                icon("back", 24)
+              ),
+              h("h2.settings-heading", {}, category.label)
+            )
+          : h("h2.settings-heading", {}, category.label),
+        ...categoryBody(category, ctx)
+      );
     }
   }
   return { el: root, onShow: draw, destroy() {} };

@@ -3,9 +3,17 @@ import { store } from "../store.js";
 import { avatarEl } from "../tabbar.js";
 import { openSheet } from "../sheet.js";
 import { account } from "../services/nuvioAccount.js";
-import { openSignIn } from "../signin.js";
+import { openSignIn, confirmSignOut } from "../signin.js";
 
 // "Who's watching?" gate. onChosen(profile) is called after the exit motion.
+function signOutButton() {
+  return h(
+    "button.picker-manage.is-signout",
+    { type: "button", onclick: () => confirmSignOut({ onDone: () => location.reload() }) },
+    "Sign Out"
+  );
+}
+
 export function renderProfiles({ onChosen }) {
   let managing = false;
   const grid = h("div.picker-grid");
@@ -26,7 +34,7 @@ export function renderProfiles({ onChosen }) {
       grid,
       manage,
       account()
-        ? null
+        ? signOutButton()
         : h(
             "button.picker-manage.is-signin",
             {
@@ -35,7 +43,7 @@ export function renderProfiles({ onChosen }) {
                 const button = event.currentTarget;
                 openSignIn({
                   onDone: () => {
-                    button.hidden = true;
+                    button.replaceWith(signOutButton());
                     draw();
                   }
                 });

@@ -111,12 +111,45 @@ export function renderPlayer() {
   // --- Top right: picture-in-picture, lock, back -----------------------------
   const pipSupported =
     document.pictureInPictureEnabled || typeof video.webkitSetPresentationMode === "function";
+  // AirPlay (Safari): send the video to an Apple TV or AirPlay TV. The button
+  // appears once Safari finds a device on the network.
+  video.setAttribute("x-webkit-airplay", "allow");
+  const airplayButton =
+    typeof video.webkitShowPlaybackTargetPicker === "function"
+      ? h(
+          "button.player-icon.is-hidden",
+          {
+            type: "button",
+            "aria-label": "AirPlay",
+            onclick: () => {
+              try {
+                video.webkitShowPlaybackTargetPicker();
+              } catch (_) {
+                toast("AirPlay isn't available right now");
+              }
+            }
+          },
+          icon("airplay", 22)
+        )
+      : null;
+  if (airplayButton) {
+    video.addEventListener("webkitplaybacktargetavailabilitychanged", (event) =>
+      airplayButton.classList.toggle("is-hidden", event.availability !== "available")
+    );
+    video.addEventListener("webkitcurrentplaybacktargetiswirelesschanged", () => {
+      const casting = !!video.webkitCurrentPlaybackTargetIsWireless;
+      airplayButton.classList.toggle("is-active", casting);
+      root.classList.toggle("is-airplaying", casting);
+      if (casting) toast("Playing on AirPlay");
+    });
+  }
   const topRight = h(
     "div.player-top",
     {},
     h(
       "div.player-pill",
       {},
+      airplayButton,
       pipSupported
         ? h(
             "button.player-icon",
@@ -1151,6 +1184,7 @@ export function renderPlayer() {
       if (nextVideo && !isReleased(nextVideo)) nextVideo = null;
       absoluteEpisode = i >= 0 ? i + 1 : 0;
     }
+    updateSession();
     loadSkipSegments();
   }
 
@@ -1484,21 +1518,84 @@ export function renderPlayer() {
   };
   document.addEventListener("keydown", onKey);
 
-  // Lock screen / Control Center controls.
-  if ("mediaSession" in navigator) {
+  // Lock screen / Control Center controls (title, artwork, play/pause, skip,
+  // scrubbing and Next Episode), kept in sync with the video.
+  const session = "mediaSession" in navigator ? navigator.mediaSession : null;
+  const sessionActions = [
+    "play",
+    "pause",
+    "seekbackward",
+    "seekforward",
+    "seekto",
+    "previoustrack",
+    "nexttrack",
+    "stop"
+  ];
+  function setAction(name, handler) {
     try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: subtitleLabel ? `${playback.name} · ${subtitleLabel}` : playback.name,
-        artwork:
-          playback.poster && /^https?:/.test(playback.poster)
-            ? [{ src: playback.poster, sizes: "300x450" }]
-            : []
+      session?.setActionHandler(name, handler);
+    } catch (_) {
+      /* not supported by this browser */
+    }
+  }
+  let closed = false;
+  let ourMetadata = null;
+  function updateSession() {
+    if (!session || closed) return;
+    const art = [];
+    const background = meta?.background || playback.background;
+    if (background && /^https?:/.test(background))
+      art.push({ src: background, sizes: "1280x720", type: "image/jpeg" });
+    if (playback.poster && /^https?:/.test(playback.poster))
+      art.push({ src: playback.poster, sizes: "300x450", type: "image/jpeg" });
+    try {
+      session.metadata = ourMetadata = new MediaMetadata({
+        title: playback.season
+          ? playback.episodeTitle || `Episode ${playback.episode}`
+          : playback.name || "",
+        artist: playback.season
+          ? `${playback.name} · S${playback.season} E${playback.episode}`
+          : String(playback.year || ""),
+        album: "Nuvio",
+        artwork: art
       });
-      navigator.mediaSession.setActionHandler("seekbackward", () => seekBy(-10));
-      navigator.mediaSession.setActionHandler("seekforward", () => seekBy(10));
     } catch (_) {
       /* ignore */
     }
+    setAction("play", () => video.play().catch(() => {}));
+    setAction("pause", () => video.pause());
+    setAction("stop", () => back());
+    setAction("seekbackward", (d) => seekBy(-(d?.seekOffset || 10)));
+    setAction("seekforward", (d) => seekBy(d?.seekOffset || 10));
+    setAction("seekto", (d) => {
+      if (!Number.isFinite(video.duration) || d?.seekTime == null) return;
+      if (d.fastSeek && "fastSeek" in video) video.fastSeek(d.seekTime);
+      else video.currentTime = d.seekTime;
+      syncPosition();
+    });
+    setAction("previoustrack", null);
+    setAction("nexttrack", nextVideo ? () => playNext() : null);
+  }
+  function syncPosition() {
+    if (!session?.setPositionState || closed) return;
+    const duration = video.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    try {
+      session.setPositionState({
+        duration,
+        playbackRate: video.playbackRate || 1,
+        position: Math.min(duration, Math.max(0, video.currentTime || 0))
+      });
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  if (session) {
+    updateSession();
+    for (const event of ["loadedmetadata", "ratechange", "seeked", "play"])
+      video.addEventListener(event, syncPosition);
+    video.addEventListener("play", () => !closed && (session.playbackState = "playing"));
+    video.addEventListener("pause", () => !closed && (session.playbackState = "paused"));
   }
 
   applySubtitleStyle();
@@ -1540,6 +1637,17 @@ export function renderPlayer() {
         /* ignore */
       }
       document.removeEventListener("keydown", onKey);
+      closed = true;
+      // Clear the lock screen, unless the next episode's player already took it.
+      if (session && (!session.metadata || session.metadata === ourMetadata)) {
+        for (const name of sessionActions) setAction(name, null);
+        try {
+          session.metadata = null;
+          session.playbackState = "none";
+        } catch (_) {
+          /* ignore */
+        }
+      }
       video.pause();
       video.removeAttribute("src");
       video.load();
