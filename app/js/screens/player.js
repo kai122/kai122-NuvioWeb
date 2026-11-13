@@ -240,6 +240,7 @@ export function renderPlayer() {
   // Shown when a stream takes too long to start or keeps buffering: ways out
   // instead of an endless spinner.
   const stuckBox = h("div.player-stuck.is-hidden");
+  const statusBox = h("div.player-stuck.is-status.is-hidden");
   root.append(
     video,
     subtitleText,
@@ -253,6 +254,7 @@ export function renderPlayer() {
     segmentButton,
     spinner,
     stuckBox,
+    statusBox,
     errorBox,
     unlockButton,
     panelHost
@@ -491,8 +493,27 @@ export function renderPlayer() {
     renderSubtitle();
   }
 
+  // Debrid add-ons (Comet, Torrentio, ...) sometimes answer with a short
+  // status clip instead of the episode ("still downloading", "syncing your
+  // library"). Those must never count as watching it.
+  // Only when the title's listed runtime is much longer than what arrived,
+  // so genuinely short episodes and shorts are never affected.
+  const STATUS_CLIP_MAX_S = 240;
+  const expectedSeconds = () => {
+    const text = String(playback.runtime || meta?.runtime || "");
+    const hours = Number(/(\d+)\s*h/i.exec(text)?.[1] || 0);
+    const minutes = Number(/(\d+)\s*m/i.exec(text)?.[1] || (/^\d+$/.test(text) ? text : 0));
+    return (hours * 60 + minutes) * 60;
+  };
+  const isStatusClip = () =>
+    Number.isFinite(video.duration) &&
+    video.duration > 0 &&
+    video.duration <= STATUS_CLIP_MAX_S &&
+    expectedSeconds() >= Math.max(600, video.duration * 4);
+
   function save(force = false) {
     if (!video.duration || !Number.isFinite(video.duration)) return;
+    if (isStatusClip()) return;
     const now = Date.now();
     if (!force && now - lastSave < SAVE_EVERY_MS) return;
     lastSave = now;
@@ -1220,6 +1241,7 @@ export function renderPlayer() {
       absoluteEpisode = i >= 0 ? i + 1 : 0;
     }
     updateSession();
+    if (video.readyState >= 1) showStatusNote();
     loadSkipSegments();
   }
 
@@ -1262,7 +1284,7 @@ export function renderPlayer() {
   }
 
   function checkSkip() {
-    if (!skipSegments.length) return;
+    if (!skipSegments.length || isStatusClip()) return;
     const t = video.currentTime;
     let seg = skipSegments.find((s) => t >= s.start && t < s.end - 0.5);
     // The Next Episode card already covers the credits.
@@ -1466,6 +1488,7 @@ export function renderPlayer() {
   });
   video.addEventListener("ended", () => {
     save(true);
+    if (isStatusClip()) return;
     if (nextVideo && !nextDismissed && pref("pb.autoNext", true)) playNext();
   });
   video.addEventListener("waiting", () => {
@@ -1713,7 +1736,48 @@ export function renderPlayer() {
     clearTimeout(hintTimer);
     clearTimeout(giveUpTimer);
     hideStuck();
+    showStatusNote();
   });
+  function showStatusNote() {
+    statusBox.classList.add("is-hidden");
+    if (!isStatusClip()) return;
+    const url = playback.url;
+    fill(
+      statusBox,
+      h(
+        "div.player-stuck-text",
+        {},
+        "This source sent a short message video, not the episode (for example \u201cstill downloading\u201d or \u201csyncing your library\u201d). It isn't saved as watched. Try again in a minute, or pick another source."
+      ),
+      h(
+        "div.player-stuck-actions",
+        {},
+        h(
+          "button.pill-button",
+          {
+            type: "button",
+            onclick: () => {
+              statusBox.classList.add("is-hidden");
+              if (url === playback.url) loadSource(url);
+            }
+          },
+          "Try again"
+        ),
+        h(
+          "button.pill-button.is-ghost",
+          {
+            type: "button",
+            onclick: () => {
+              statusBox.classList.add("is-hidden");
+              openSources();
+            }
+          },
+          "Other sources"
+        )
+      )
+    );
+    statusBox.classList.remove("is-hidden");
+  }
   // Playing, then stuck buffering for a long time: offer the same ways out.
   video.addEventListener("waiting", () => {
     clearTimeout(stallTimer);

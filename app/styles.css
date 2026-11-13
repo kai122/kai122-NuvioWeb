@@ -4895,3 +4895,13 @@ html.is-standalone body {
   justify-content: center;
   gap: 10px;
 }
+
+/* A source's short status clip ("still downloading"): note at the top. */
+.player-stuck.is-status {
+  top: calc(90px + var(--safe-top));
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(30, 30, 32, 0.88);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
