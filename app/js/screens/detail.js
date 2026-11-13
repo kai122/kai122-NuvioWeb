@@ -121,20 +121,18 @@ function ratingChips(meta, external) {
 
 function metaLine(meta, episodes, ratingsSlot) {
   const seasons = new Set(episodes.filter((v) => v.season > 0).map((v) => v.season)).size;
+  // Like the native app: series show "N Seasons" (no year or runtime),
+  // movies show the year and runtime.
+  const series = meta.type === "series" && seasons > 0;
   return h(
     "div.detail-meta",
     {},
-    meta.year
-      ? h(
-          "span.detail-year",
-          {},
-          meta.type === "series" && meta.releaseInfo ? meta.releaseInfo : meta.year
-        )
-      : null,
-    meta.type === "series" && seasons
-      ? h("span", {}, `${seasons} Season${seasons === 1 ? "" : "s"}`)
-      : null,
-    meta.runtime ? h("span", {}, meta.runtime) : null,
+    series
+      ? h("span.detail-year", {}, `${seasons} Season${seasons === 1 ? "" : "s"}`)
+      : meta.year
+        ? h("span.detail-year", {}, meta.year)
+        : null,
+    !series && meta.runtime ? h("span", {}, meta.runtime) : null,
     meta.certification ? h("span.cert-box", {}, meta.certification) : null,
     ratingsSlot
   );
@@ -501,8 +499,14 @@ function castBlock(meta) {
       {},
       people.map((person) =>
         h(
-          "div.cast-card",
-          {},
+          person.id ? "button.cast-card" : "div.cast-card",
+          person.id
+            ? {
+                type: "button",
+                "aria-label": person.name,
+                onclick: () => navigate(`person/${person.id}`)
+              }
+            : {},
           h(
             "div.cast-photo",
             {},
@@ -528,8 +532,15 @@ function logosBlock(title, entries) {
       {},
       entries.map((entry) =>
         h(
-          "div.company-card",
-          { title: entry.name },
+          entry.id ? "button.company-card" : "div.company-card",
+          entry.id
+            ? {
+                type: "button",
+                title: entry.name,
+                "aria-label": entry.name,
+                onclick: () => navigate(`company/${entry.kind || "company"}/${entry.id}`)
+              }
+            : { title: entry.name },
           entry.logo
             ? img(entry.logo, "company-logo", entry.name)
             : h("span.company-name", {}, entry.name)

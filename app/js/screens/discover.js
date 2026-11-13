@@ -23,7 +23,7 @@ export function renderDiscover([presetKey] = []) {
   const chips = h("div.chip-row");
   const input = h("input.search-input", {
     type: "search",
-    placeholder: "Search movies & series",
+    placeholder: "Search movies, shows...",
     enterkeyhint: "search",
     autocomplete: "off",
     autocorrect: "off",

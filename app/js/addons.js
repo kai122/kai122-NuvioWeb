@@ -24,6 +24,11 @@ async function getJSON(url, { timeout = 15000, cache = true } = {}) {
   return request;
 }
 
+// Drops a cached response (used by an add-on's Refresh button).
+export function forgetCached(url) {
+  responseCache.delete(url);
+}
+
 export function normalizeManifestUrl(input) {
   let url = String(input || "").trim();
   if (!url) return "";

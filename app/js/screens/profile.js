@@ -1,6 +1,6 @@
-import { h, icon, safeImageUrl, fill } from "../dom.js";
+import { h, icon, safeImageUrl, safeHttpUrl, fill } from "../dom.js";
 import { store } from "../store.js";
-import { loadAllAddons, fetchManifest, normalizeManifestUrl } from "../addons.js";
+import { loadAllAddons, fetchManifest, normalizeManifestUrl, forgetCached } from "../addons.js";
 import { openSheet, toast } from "../sheet.js";
 
 // Lets Home rebuild its rows after add-ons change.
@@ -86,20 +86,7 @@ export function sectionAddons() {
               `Enable ${manifest?.name || "add-on"}`
             )
           ),
-          h(
-            "div.addon-chips",
-            {},
-            h("span.addon-chip", {}, addon.enabled ? (manifest ? "Active" : "Error") : "Off"),
-            h(
-              "span.addon-chip",
-              {},
-              `${resources.length} resource${resources.length === 1 ? "" : "s"}`
-            ),
-            h("span.addon-chip", {}, `${catalogs} catalog${catalogs === 1 ? "" : "s"}`),
-            manifest?.behaviorHints?.configurable ? h("span.addon-chip", {}, "Configurable") : null
-          ),
-          manifest?.description ? h("div.addon-desc", {}, manifest.description) : null,
-          h("div.addon-meta", {}, [types, resources.join(", ")].filter(Boolean).join(" • ")),
+          // Like the native card: actions under the name, then a divider.
           h(
             "div.addon-actions",
             {},
@@ -115,7 +102,7 @@ export function sectionAddons() {
                   draw();
                 }
               },
-              icon("chevronDown", 22)
+              icon("arrowUp", 22)
             ),
             h(
               "button.icon-button",
@@ -129,8 +116,34 @@ export function sectionAddons() {
                   draw();
                 }
               },
-              icon("chevronDown", 22)
+              icon("arrowDown", 22)
             ),
+            h(
+              "button.icon-button",
+              {
+                type: "button",
+                "aria-label": "Refresh",
+                onclick: () => {
+                  forgetCached(addon.url);
+                  addonsChanged();
+                  draw();
+                  toast(`Refreshed ${manifest?.name || "add-on"}`);
+                }
+              },
+              icon("refresh", 22)
+            ),
+            manifest?.behaviorHints?.configurable && safeHttpUrl(`${addon.base}/configure`)
+              ? h(
+                  "a.icon-button.is-accent",
+                  {
+                    href: safeHttpUrl(`${addon.base}/configure`),
+                    target: "_blank",
+                    rel: "noopener noreferrer",
+                    "aria-label": "Configure"
+                  },
+                  icon("gear", 22)
+                )
+              : null,
             h(
               "button.icon-button.is-danger",
               {
@@ -146,7 +159,21 @@ export function sectionAddons() {
               },
               icon("trash", 22)
             )
-          )
+          ),
+          h(
+            "div.addon-chips",
+            {},
+            h("span.addon-chip", {}, addon.enabled ? (manifest ? "Active" : "Error") : "Off"),
+            h(
+              "span.addon-chip",
+              {},
+              `${resources.length} resource${resources.length === 1 ? "" : "s"}`
+            ),
+            h("span.addon-chip", {}, `${catalogs} catalog${catalogs === 1 ? "" : "s"}`),
+            manifest?.behaviorHints?.configurable ? h("span.addon-chip", {}, "Configurable") : null
+          ),
+          manifest?.description ? h("div.addon-desc", {}, manifest.description) : null,
+          h("div.addon-meta", {}, [types, resources.join(", ")].filter(Boolean).join(" • "))
         );
       })
     );
@@ -207,9 +234,9 @@ export function sectionAddons() {
   draw();
   return [
     h(
-      "div.settings-heading-row",
+      "div.addon-list-head",
       {},
-      h("h2.settings-heading", {}, "Add-ons"),
+      h("div.set-section-label", {}, "Installed Addons"),
       h("button.pill-button", { type: "button", onclick: openAddSheet }, icon("add", 20), "Add")
     ),
     h(

@@ -160,6 +160,7 @@ export async function enrichMeta(meta) {
   if (cert) out.certification = cert;
   if (tmdbModule("credits") && data.credits) {
     out.castFull = (data.credits.cast || []).slice(0, 20).map((c) => ({
+      id: c.id,
       name: c.name,
       character: c.character || "",
       photo: image(c.profile_path, "w185")
@@ -174,12 +175,19 @@ export async function enrichMeta(meta) {
   }
   if (tmdbModule("production_companies")) {
     out.companies = (data.production_companies || []).map((c) => ({
+      id: c.id,
+      kind: "company",
       name: c.name,
       logo: image(c.logo_path, "w185")
     }));
   }
   if (tmdbModule("networks") && data.networks?.length) {
-    out.networks = data.networks.map((n) => ({ name: n.name, logo: image(n.logo_path, "w185") }));
+    out.networks = data.networks.map((n) => ({
+      id: n.id,
+      kind: "network",
+      name: n.name,
+      logo: image(n.logo_path, "w185")
+    }));
   }
   if (tmdbModule("trailers")) {
     const videos = (data.videos?.results || []).filter(
@@ -400,5 +408,99 @@ export async function tmdbSourceItems(source = {}, page = 1) {
   return {
     items: dedupe((data.results || []).map((i) => listItem(i, mediaType))),
     hasMore: Number(data.page || page) < Math.min(Number(data.total_pages || 1), 500)
+  };
+}
+
+// --- Person and studio/network pages ------------------------------------------
+function age(from, to) {
+  const a = new Date(from);
+  const b = to ? new Date(to) : new Date();
+  if (Number.isNaN(a.getTime())) return null;
+  let years = b.getFullYear() - a.getFullYear();
+  if (b.getMonth() < a.getMonth() || (b.getMonth() === a.getMonth() && b.getDate() < a.getDate()))
+    years -= 1;
+  return years;
+}
+
+export async function personDetails(id) {
+  const data = await get(`/person/${id}`, {
+    language: language(),
+    append_to_response: "combined_credits"
+  });
+  const credits = [...(data.combined_credits?.cast || []), ...(data.combined_credits?.crew || [])];
+  const seen = new Set();
+  const titles = credits
+    .map((c) => listItem(c, c.media_type))
+    .filter(
+      (i) =>
+        i && i.poster && !seen.has(`${i.type}:${i.tmdbId}`) && seen.add(`${i.type}:${i.tmdbId}`)
+    );
+  const years = titles.map((t) => Number(t.year)).filter((y) => y > 1800);
+  return {
+    name: data.name,
+    photo: image(data.profile_path, "h632"),
+    birthday: data.birthday || "",
+    deathday: data.deathday || "",
+    age: age(data.birthday, data.deathday),
+    place: data.place_of_birth || "",
+    department: data.known_for_department || "",
+    biography: data.biography || "",
+    count: titles.length,
+    since: years.length ? Math.min(...years) : null,
+    popular: [...titles].sort((a, b) => b.popularity - a.popularity).slice(0, 20),
+    latest: [...titles].sort((a, b) => String(b.year).localeCompare(String(a.year))).slice(0, 20)
+  };
+}
+
+// kind: "company" | "network". Rows like the native page.
+export async function companyDetails(kind, id) {
+  const data = await get(`/${kind}/${id}`, {});
+  const today = new Date().toISOString().slice(0, 10);
+  const discover = async (media, title, params) => {
+    const r = await get(`/discover/${media}`, { language: language(), ...params }).catch(
+      () => null
+    );
+    const items = (r?.results || []).map((i) => listItem(i, media)).filter((i) => i && i.poster);
+    return items.length ? { title, items, total: r.total_results || items.length } : null;
+  };
+  const plan =
+    kind === "network"
+      ? [
+          ["tv", "Series • Popular", { with_networks: id, sort_by: "popularity.desc" }],
+          [
+            "tv",
+            "Series • Top Rated",
+            { with_networks: id, sort_by: "vote_average.desc", "vote_count.gte": 100 }
+          ],
+          [
+            "tv",
+            "Series • Recent",
+            { with_networks: id, sort_by: "first_air_date.desc", "first_air_date.lte": today }
+          ]
+        ]
+      : [
+          ["movie", "Movies • Popular", { with_companies: id, sort_by: "popularity.desc" }],
+          [
+            "movie",
+            "Movies • Top Rated",
+            { with_companies: id, sort_by: "vote_average.desc", "vote_count.gte": 200 }
+          ],
+          [
+            "movie",
+            "Movies • Recent",
+            { with_companies: id, sort_by: "primary_release_date.desc" }
+          ],
+          ["tv", "Series • Popular", { with_companies: id, sort_by: "popularity.desc" }]
+        ];
+  const rows = (await Promise.all(plan.map(([m, t, p]) => discover(m, t, p)))).filter(Boolean);
+  return {
+    kind,
+    name: data.name,
+    logo: image(data.logo_path, "w500"),
+    headquarters: data.headquarters || "",
+    country: data.origin_country || "",
+    description: data.description || "",
+    total: rows.reduce((max, r) => Math.max(max, r.total), 0),
+    rows
   };
 }

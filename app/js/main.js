@@ -10,6 +10,7 @@ import { renderSettings } from "./settings/screen.js";
 import { renderStreams } from "./screens/streams.js";
 import { renderDetail } from "./screens/detail.js";
 import { renderCollectionFolder } from "./screens/collections.js";
+import { renderPerson, renderCompany } from "./screens/entity.js";
 import { renderPlayer } from "./screens/player.js";
 import { renderProfiles, showSplash } from "./screens/profiles.js";
 import { closeAllSheets, openSheet } from "./sheet.js";
@@ -63,6 +64,10 @@ function build(route) {
       return renderDetail(route.params);
     case "collection":
       return renderCollectionFolder(route.params);
+    case "person":
+      return renderPerson(route.params);
+    case "company":
+      return renderCompany(route.params);
     case "play":
       return renderPlayer();
     case "profiles":
