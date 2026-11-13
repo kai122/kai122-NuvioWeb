@@ -26,6 +26,15 @@ export class RemuxError extends Error {
   }
 }
 
+// Your stream relay (relay/stream-worker.js on Cloudflare): fetches the file
+// and adds the header that lets the app read it, for hosts like TorBox that
+// don't send it. Only video is relayed, and only for this app's site.
+export const DEFAULT_STREAM_RELAY = "https://nuvio-relay.nuvio-ff2c9472.workers.dev";
+export function relayed(url, relayBase = DEFAULT_STREAM_RELAY) {
+  const base = String(relayBase || "").replace(/\/+$/, "");
+  return /^https:\/\/[^\s/?#]+$/.test(base) ? `${base}/?u=${encodeURIComponent(url)}` : "";
+}
+
 export const remuxAvailable = () =>
   !!MS && typeof WritableStream !== "undefined" && typeof MS.isTypeSupported === "function";
 

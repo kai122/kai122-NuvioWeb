@@ -1,3 +1,23 @@
+# Stream relay (lets the app play TorBox MKVs itself)
+
+Debrid servers like TorBox send files without the header that lets a web page
+read them (CORS). VLC doesn't need it, but the app's in-app MKV repackager
+does. [`stream-worker.js`](stream-worker.js) is a tiny Cloudflare Worker that
+fetches the file and adds that header. Nothing is stored or changed.
+
+It's already deployed for this app as
+`https://nuvio-relay.nuvio-ff2c9472.workers.dev` (the app's default). It only
+serves requests from the app's own site and only passes video through, so it
+can't be used as a general proxy.
+
+To run your own instead: create a Worker named `nuvio-relay` (Compute
+(Workers) → Workers & Pages → Create → Create Worker), paste
+`stream-worker.js`, deploy, and put its address in **Settings → Media →
+Playback → Stream relay address**. If you host the app somewhere other than
+kai122.github.io, add that site to `ALLOWED_ORIGINS` at the top of the file.
+
+---
+
 # IntroDB relay (for "Skip Intro" on TV shows and movies)
 
 The touch app gets skip times for anime from AniSkip directly. For TV shows

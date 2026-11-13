@@ -9,7 +9,13 @@ import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { fetchSkipSegments } from "../services/skip.js";
 import { createStreamList, playability, choiceFor, mkvToPlayerApp } from "../streamlist.js";
 import { probeStream, describeCodec } from "../mkvprobe.js";
-import { remuxAvailable, openMkv, play as playMkv } from "../remux.js";
+import {
+  remuxAvailable,
+  openMkv,
+  play as playMkv,
+  relayed,
+  DEFAULT_STREAM_RELAY
+} from "../remux.js";
 import {
   findCue,
   languageName,
@@ -727,7 +733,12 @@ export function renderPlayer() {
       ["Buffered ahead", ahead],
       ["Speed", `${video.playbackRate}×`],
       ["Server", host],
-      ["Playback", remux ? "MKV, repackaged in the app" : "Direct"],
+      [
+        "Playback",
+        remux
+          ? `MKV, repackaged in the app${viaRelayUsed ? " (through your relay)" : ""}`
+          : "Direct"
+      ],
       ["Subtitles", activeSubtitle ? activeSubtitle.label : "Off"]
     ].filter(([, value]) => value);
     openPanel(
@@ -1572,6 +1583,7 @@ export function renderPlayer() {
   // Safari plays them like any other video. Otherwise the link goes to Safari
   // as it is, with the checks above.
   let remux = null;
+  let viaRelayUsed = false;
   const looksMkv = (url) => /\bmkv\b/i.test(`${url} ${playback.streamTitle || ""}`);
   function stopRemux() {
     remux?.destroy();
@@ -1589,11 +1601,24 @@ export function renderPlayer() {
   }
   async function loadSource(url, startAt = 0) {
     stopRemux();
+    viaRelayUsed = false;
     watchStart();
     if (looksMkv(url) && pref("pb.remux", true) && remuxAvailable()) {
       setLoading("Preparing MKV…");
       try {
-        const handle = await openMkv(url);
+        let handle;
+        try {
+          handle = await openMkv(url);
+        } catch (error) {
+          // The host won't let the app read the file: go through the relay.
+          const viaRelay =
+            error?.kind === "blocked" && pref("pb.streamRelay", true)
+              ? relayed(url, pref("pb.streamRelayUrl", "") || DEFAULT_STREAM_RELAY)
+              : "";
+          if (!viaRelay || closed || url !== playback.url) throw error;
+          handle = await openMkv(viaRelay);
+          viaRelayUsed = true;
+        }
         if (closed || url !== playback.url) {
           handle.input.dispose?.();
           return;

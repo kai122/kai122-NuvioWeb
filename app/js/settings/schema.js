@@ -800,6 +800,21 @@ export const PAGES = {
         title: "Repackage MKVs in the app",
         sub: "Rewraps the video and audio of MKV files as MP4 so they play here, without re-encoding. Not for DTS or TrueHD audio. AirPlay isn't available for these.",
         def: true
+      },
+      {
+        t: "toggle",
+        pref: "pb.streamRelay",
+        title: "Use stream relay when needed",
+        sub: "Some hosts (like TorBox) don't let the app read their files. Your relay on Cloudflare fetches them for the repackager. Only video passes through it, and only for this app.",
+        def: true
+      },
+      {
+        t: "text",
+        pref: "pb.streamRelayUrl",
+        title: "Stream relay address",
+        sub: "Leave empty to use the one set up for you.",
+        ph: "https://nuvio-relay.yourname.workers.dev",
+        secret: false
       }
     ],
     custom: null
