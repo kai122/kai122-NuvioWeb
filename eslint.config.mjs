@@ -14,6 +14,7 @@ const runtimeGlobals = {
 export default [
   {
     ignores: [
+      "app/vendor/**",
       "assets/**",
       "build/**",
       "dist/**",

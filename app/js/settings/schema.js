@@ -781,7 +781,7 @@ export const PAGES = {
         t: "select",
         pref: "streams.mkvMode",
         title: "MKV files",
-        sub: "Safari plays many MKV files. If one fails, the app tries another source, then offers VLC or Infuse.",
+        sub: "MKVs are repackaged and played in the app when their host allows it. If one can't play, the app tries another source, then offers VLC or Infuse.",
         opts: [
           {
             v: "app",
@@ -793,6 +793,13 @@ export const PAGES = {
           }
         ],
         def: "app"
+      },
+      {
+        t: "toggle",
+        pref: "pb.remux",
+        title: "Repackage MKVs in the app",
+        sub: "Rewraps the video and audio of MKV files as MP4 so they play here, without re-encoding. Not for DTS or TrueHD audio. AirPlay isn't available for these.",
+        def: true
       }
     ],
     custom: null

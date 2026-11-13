@@ -9,6 +9,7 @@ import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { fetchSkipSegments } from "../services/skip.js";
 import { createStreamList, playability, choiceFor, mkvToPlayerApp } from "../streamlist.js";
 import { probeStream, describeCodec } from "../mkvprobe.js";
+import { remuxAvailable, openMkv, play as playMkv } from "../remux.js";
 import {
   findCue,
   languageName,
@@ -682,8 +683,7 @@ export function renderPlayer() {
       bingeGroup: choice.bingeGroup || ""
     });
     errorBox.classList.add("is-hidden");
-    video.src = playback.url;
-    watchStart();
+    loadSource(playback.url, time);
     video.addEventListener(
       "loadedmetadata",
       () => {
@@ -727,6 +727,7 @@ export function renderPlayer() {
       ["Buffered ahead", ahead],
       ["Speed", `${video.playbackRate}×`],
       ["Server", host],
+      ["Playback", remux ? "MKV, repackaged in the app" : "Direct"],
       ["Subtitles", activeSubtitle ? activeSubtitle.label : "Off"]
     ].filter(([, value]) => value);
     openPanel(
@@ -1105,6 +1106,18 @@ export function renderPlayer() {
 
   // --- Audio tracks (Safari exposes them for HLS and MP4) ------------------------
   function audioTracks() {
+    // Repackaged MKV: its own audio tracks (Safari sees only the chosen one).
+    if (remux)
+      return remux.audioTracks
+        .filter((t) => t.playable)
+        .map((t) => ({
+          remuxId: t.id,
+          language: t.language,
+          label: [t.name || (t.language ? languageName(t.language) : ""), t.codec]
+            .filter(Boolean)
+            .join(" · "),
+          enabled: t.selected
+        }));
     return video.audioTracks ? [...video.audioTracks] : [];
   }
 
@@ -1114,11 +1127,16 @@ export function renderPlayer() {
   }
 
   function selectAudio(track) {
+    if (remux && track.remuxId != null) {
+      if (!track.enabled) remux.setAudio(track.remuxId).then(renderToolbar, () => {});
+      return;
+    }
     for (const t of audioTracks()) t.enabled = t === track;
     renderToolbar();
   }
 
   function applyAudioPreference() {
+    if (remux) return; // chosen when the MKV was opened
     const tracks = audioTracks();
     if (tracks.length < 2) return;
     for (const lang of [pref("pb.audioLang", ""), pref("pb.audioLang2", "")].filter(Boolean)) {
@@ -1547,7 +1565,62 @@ export function renderPlayer() {
       if (closed || started() || url !== playback.url) return;
       cantPlay("It didn't start after 25 seconds. Safari can't play some MKV files or codecs.");
     }, GIVE_UP_AFTER_MS);
+  }
+
+  // --- MKV repackager (see remux.js) -------------------------------------------------
+  // MKVs are rewrapped as MP4 inside the app when the host allows it; then
+  // Safari plays them like any other video. Otherwise the link goes to Safari
+  // as it is, with the checks above.
+  let remux = null;
+  const looksMkv = (url) => /\bmkv\b/i.test(`${url} ${playback.streamTitle || ""}`);
+  function stopRemux() {
+    remux?.destroy();
+    remux = null;
+    video.disableRemotePlayback = false;
+  }
+  function preferredRemuxAudio(handle) {
+    for (const lang of [pref("pb.audioLang", ""), pref("pb.audioLang2", "")].filter(Boolean)) {
+      const match = handle.audio.find(
+        (a) => a.playable && a.language && languageName(a.language) === languageName(lang)
+      );
+      if (match) return match.id;
+    }
+    return null;
+  }
+  async function loadSource(url, startAt = 0) {
+    stopRemux();
+    watchStart();
+    if (looksMkv(url) && pref("pb.remux", true) && remuxAvailable()) {
+      setLoading("Preparing MKV…");
+      try {
+        const handle = await openMkv(url);
+        if (closed || url !== playback.url) {
+          handle.input.dispose?.();
+          return;
+        }
+        remux = playMkv(handle, video, {
+          startAt,
+          audioId: preferredRemuxAudio(handle),
+          onError: () => {
+            if (url === playback.url) cantPlay("Repackaging this MKV stopped working.");
+          }
+        });
+        video.play().catch(() => {});
+        renderToolbar();
+        return;
+      } catch (error) {
+        if (closed || url !== playback.url) return;
+        // A file with formats Safari can't play: no point handing it over.
+        if (error?.kind === "unsupported") {
+          cantPlay(error.message);
+          return;
+        }
+        // The host doesn't allow it (CORS): let Safari try the link itself.
+      }
+    }
+    video.src = url;
     preflight(url);
+    video.play().catch(() => {});
   }
 
   // MKVs: read the file's header while it loads. If it holds formats Safari
@@ -1740,8 +1813,7 @@ export function renderPlayer() {
     profileId: store.activeProfileId,
     at: Date.now()
   });
-  video.src = playback.url;
-  watchStart();
+  loadSource(playback.url, saved && saved.time > 5 ? saved.time : 0);
   video.play().catch(() => {
     /* autoplay may need a tap; the play button is shown */
   });
@@ -1766,6 +1838,7 @@ export function renderPlayer() {
       document.removeEventListener("keydown", onKey);
       closed = true;
       clearWatch();
+      stopRemux();
       // Clear the lock screen, unless the next episode's player already took it.
       if (session && (!session.metadata || session.metadata === ourMetadata)) {
         for (const name of sessionActions) setAction(name, null);
