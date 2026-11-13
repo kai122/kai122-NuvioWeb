@@ -1159,7 +1159,15 @@ export function renderPlayer() {
   let skipSegments = [];
   let shownSegment = null;
   const skippedAuto = new Set();
-  const SKIP_LABELS = { intro: "Skip Intro", recap: "Skip Recap", credits: "Skip Credits" };
+  const SKIP_LABELS = {
+    intro: "Skip Intro",
+    recap: "Skip Recap",
+    credits: "Skip Credits",
+    preview: "Skip Preview"
+  };
+  // Credits and the preview after them lead to the next episode.
+  const leadsToNext = (seg) =>
+    (seg.kind === "credits" || seg.kind === "preview") && nextVideo && !nextDismissed;
 
   async function loadSkipSegments() {
     const forVideo = playback.videoId;
@@ -1169,11 +1177,12 @@ export function renderPlayer() {
 
   function skipSegment(seg) {
     // Credits with a next episode: go straight to it, like the native app.
-    if (seg.kind === "credits" && nextVideo && !nextDismissed) {
+    if (leadsToNext(seg)) {
       playNext();
       return;
     }
     const end = Math.min(seg.end, Number.isFinite(video.duration) ? video.duration - 0.5 : seg.end);
+    if (!Number.isFinite(end)) return;
     video.currentTime = end;
     hideSkip();
   }
@@ -1188,7 +1197,11 @@ export function renderPlayer() {
     const t = video.currentTime;
     let seg = skipSegments.find((s) => t >= s.start && t < s.end - 0.5);
     // The Next Episode card already covers the credits.
-    if (seg?.kind === "credits" && nextCard.classList.contains("is-on")) seg = null;
+    if (
+      (seg?.kind === "credits" || seg?.kind === "preview") &&
+      nextCard.classList.contains("is-on")
+    )
+      seg = null;
     if (!seg) {
       if (shownSegment) hideSkip();
       return;
@@ -1204,13 +1217,7 @@ export function renderPlayer() {
     shownSegment = seg;
     fill(
       segmentButton,
-      h(
-        "span",
-        {},
-        seg.kind === "credits" && nextVideo && !nextDismissed
-          ? "Next Episode"
-          : SKIP_LABELS[seg.kind]
-      ),
+      h("span", {}, leadsToNext(seg) ? "Next Episode" : SKIP_LABELS[seg.kind]),
       icon("skipNext", 20)
     );
     segmentButton.onclick = (event) => {

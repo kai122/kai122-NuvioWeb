@@ -2,7 +2,7 @@ import { h, icon, img, fill, safeImageUrl, prefersReducedMotion } from "../dom.j
 import { fetchMeta } from "../addons.js";
 import { store } from "../store.js";
 import { back, navigate } from "../router.js";
-import { toast } from "../sheet.js";
+import { toast, openSheet, optionList } from "../sheet.js";
 import { pref } from "../prefs.js";
 import { openStreams } from "./streams.js";
 import { enrichMeta, seasonDetails, imdbIdFor } from "../services/tmdb.js";
@@ -200,61 +200,281 @@ function episodeCard(meta, video, tmdbExtra) {
   );
 }
 
+// Seasons (poster tiles when TMDB has season posters, like the native app;
+// otherwise pills) and Episodes with search and sort.
 function seasonsBlock(meta, episodes, initialSeason) {
   const seasons = [...new Set(episodes.map((v) => v.season))].sort(
     (a, b) => (a === 0) - (b === 0) || a - b
   );
-  if (!seasons.length) return null;
+  if (!seasons.length) return [];
   const layout = pref("meta.episodeCards", "horizontal") === "list" ? "is-list" : "is-row";
-  const tabs = h("div.season-tabs");
+  const posters = seasons.some((season) => meta.seasonPosters?.[season]);
+  const picker = h(posters ? "div.row-track.season-poster-track" : "div.season-tabs");
+  const search = h("input.episode-search", {
+    type: "search",
+    placeholder: "Search title, plot or number",
+    autocomplete: "off",
+    autocorrect: "off",
+    spellcheck: "false",
+    enterkeyhint: "search"
+  });
+  const sortButton = h("button.episode-tool", { type: "button" }, "Sort");
   const count = h("div.episode-count");
+  const order = h("div.episode-count.is-order");
   const track = h("div.episode-track", {
     class: layout === "is-row" ? "row-track" : "episode-list"
   });
   let active = null;
+  let extra = null;
+  let descending = false;
+  const matches = (video, q) => {
+    if (!q) return true;
+    const e = extra?.get(video.episode) || {};
+    if (String(video.episode) === q || `e${video.episode}` === q) return true;
+    return [video.title, video.name, video.overview, video.description, e.title, e.overview].some(
+      (text) =>
+        String(text || "")
+          .toLowerCase()
+          .includes(q)
+    );
+  };
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const all = episodes.filter((v) => v.season === active);
+    let items = all.filter((v) => matches(v, q));
+    if (descending) items = [...items].reverse();
+    count.textContent = `${items.length} of ${all.length} episode${all.length === 1 ? "" : "s"}`;
+    order.textContent = descending ? "Episode: last to first" : "Episode: first to last";
+    fill(track, ...items.map((video) => episodeCard(meta, video, extra)));
+  };
   const select = async (season) => {
     active = season;
-    tabs
-      .querySelectorAll(".season-tab")
+    extra = null;
+    picker
+      .querySelectorAll("[data-season]")
       .forEach((tab) => tab.classList.toggle("is-selected", Number(tab.dataset.season) === season));
-    const items = episodes.filter((v) => v.season === season);
-    count.textContent = `${items.length} episode${items.length === 1 ? "" : "s"}`;
-    fill(track, ...items.map((video) => episodeCard(meta, video, null)));
     track.scrollLeft = 0;
+    draw();
     if (!meta.tmdbId) return;
     try {
-      const extra = await seasonDetails(meta.tmdbId, season);
-      if (extra && active === season)
-        fill(track, ...items.map((video) => episodeCard(meta, video, extra)));
+      const details = await seasonDetails(meta.tmdbId, season);
+      if (details && active === season) {
+        extra = details;
+        draw();
+      }
     } catch (_) {
       /* keep the add-on's episode data */
     }
   };
+  search.addEventListener("input", draw);
+  sortButton.addEventListener("click", () => {
+    descending = !descending;
+    draw();
+  });
   seasons.forEach((season) => {
-    const poster = meta.seasonPosters?.[season];
-    tabs.append(
-      h(
-        "button.season-tab",
-        {
-          type: "button",
-          class: poster ? "has-poster" : "",
-          dataset: { season },
-          onclick: () => select(season)
-        },
-        poster ? img(poster, "season-poster", "") : null,
-        h("span", {}, season === 0 ? "Specials" : `Season ${season}`)
-      )
+    const label = season === 0 ? "Specials" : `Season ${season}`;
+    picker.append(
+      posters
+        ? h(
+            "button.season-poster-tile",
+            { type: "button", dataset: { season }, onclick: () => select(season) },
+            h(
+              "span.season-poster-frame",
+              {},
+              img(meta.seasonPosters?.[season] || meta.poster, "season-poster-img", "")
+            ),
+            h("span.season-poster-label", {}, label)
+          )
+        : h(
+            "button.season-tab",
+            { type: "button", dataset: { season }, onclick: () => select(season) },
+            h("span", {}, label)
+          )
     );
   });
   select(seasons.includes(initialSeason) ? initialSeason : seasons[0]);
+  return [
+    posters ? h("section.detail-section", {}, h("h2.section-title", {}, "Seasons"), picker) : null,
+    h(
+      "section.detail-section",
+      { class: layout },
+      h("h2.section-title", {}, "Episodes"),
+      posters ? null : picker,
+      h(
+        "div.episode-toolbar",
+        {},
+        h("label.episode-search-wrap", {}, icon("search", 18), search),
+        sortButton
+      ),
+      h("div.episode-meta-row", {}, count, order),
+      track
+    )
+  ];
+}
+
+// Trailers row (TMDB videos), opening YouTube.
+function trailersBlock(meta) {
+  const list = (meta.trailers || []).filter((t) => /^[\w-]{6,20}$/.test(t.ytId || ""));
+  if (!list.length) return null;
   return h(
     "section.detail-section",
-    { class: layout },
-    h("h2.section-title", {}, "Episodes"),
-    tabs,
-    count,
-    track
+    {},
+    h("h2.section-title", {}, "Trailers"),
+    h(
+      "div.row-track.trailer-track",
+      {},
+      list.map((t) =>
+        h(
+          "button.trailer-card",
+          {
+            type: "button",
+            "aria-label": t.name || "Trailer",
+            onclick: () =>
+              window.open(
+                `https://www.youtube.com/watch?v=${encodeURIComponent(t.ytId)}`,
+                "_blank",
+                "noopener"
+              )
+          },
+          h(
+            "span.trailer-thumb",
+            {},
+            img(
+              `https://i.ytimg.com/vi/${encodeURIComponent(t.ytId)}/hqdefault.jpg`,
+              "trailer-img",
+              ""
+            ),
+            h("span.trailer-play", {}, icon("play", 22))
+          ),
+          h("span.trailer-name", {}, t.name || "Trailer"),
+          t.year ? h("span.trailer-year", {}, t.year) : null
+        )
+      )
+    )
   );
+}
+
+// Rating Map: every episode's TMDB rating for a season, as coloured tiles.
+function ratingMapBlock(meta, episodes) {
+  if (meta.type !== "series" || !meta.tmdbId) return null;
+  const seasons = [...new Set(episodes.map((v) => v.season))]
+    .filter((s) => s > 0)
+    .sort((a, b) => a - b);
+  if (!seasons.length) return null;
+  const section = h("section.detail-section.rating-map");
+  const seasonButton = h("button.episode-tool.has-chevron", { type: "button" });
+  const summary = h("span.rating-summary");
+  const grid = h("div.rating-grid");
+  const footer = h("div.rating-footer");
+  const legend = h(
+    "div.rating-legend",
+    {},
+    [
+      ["is-top", "9+"],
+      ["is-great", "8–9"],
+      ["is-good", "7–8"],
+      ["is-ok", "6–7"],
+      ["is-low", "<6"]
+    ].map(([cls, label]) =>
+      h("span.rating-legend-item", {}, h("span.rating-dot", { class: cls }), label)
+    )
+  );
+  const band = (r) =>
+    r >= 9 ? "is-top" : r >= 8 ? "is-great" : r >= 7 ? "is-good" : r >= 6 ? "is-ok" : "is-low";
+  let active = seasons[0];
+  async function load(season) {
+    active = season;
+    fill(seasonButton, h("span", {}, `Season ${season}`), icon("chevronDown", 16));
+    fill(grid);
+    let details = null;
+    try {
+      details = await seasonDetails(meta.tmdbId, season);
+    } catch (_) {
+      details = null;
+    }
+    if (active !== season) return;
+    const rated = episodes
+      .filter((v) => v.season === season)
+      .map((v) => ({ v, r: Number(details?.get(v.episode)?.rating || v.rating || 0) }))
+      .filter((x) => x.r > 0);
+    if (!rated.length) {
+      if (seasons.length === 1) section.remove();
+      fill(summary);
+      fill(footer, h("span.muted", {}, "No ratings for this season yet."));
+      return;
+    }
+    const avg = rated.reduce((sum, x) => sum + x.r, 0) / rated.length;
+    fill(
+      summary,
+      icon("star", 14),
+      ` Average ${avg.toFixed(1)} · ${rated.length} episode${rated.length === 1 ? "" : "s"} rated`
+    );
+    fill(
+      grid,
+      rated.map(({ v, r }) =>
+        h(
+          "button.rating-tile",
+          {
+            type: "button",
+            class: band(r),
+            "aria-label": `Episode ${v.episode}: ${r.toFixed(1)}`,
+            onclick: () =>
+              toast(
+                `S${v.season} E${v.episode}${v.title || v.name ? ` · ${v.title || v.name}` : ""} — ${r.toFixed(1)}`
+              )
+          },
+          r.toFixed(1)
+        )
+      )
+    );
+    const best = rated.reduce((a, b) => (b.r > a.r ? b : a));
+    const worst = rated.reduce((a, b) => (b.r < a.r ? b : a));
+    fill(
+      footer,
+      h("p.rating-hint", {}, "Tap an episode to see its rating."),
+      h(
+        "div.rating-extremes",
+        {},
+        h(
+          "span.rating-chip",
+          {},
+          h("span.rating-dot", { class: "is-great" }),
+          `Best S${best.v.season} E${best.v.episode}`
+        ),
+        h(
+          "span.rating-chip",
+          {},
+          h("span.rating-dot", { class: "is-good" }),
+          `Lowest S${worst.v.season} E${worst.v.episode}`
+        )
+      )
+    );
+  }
+  seasonButton.addEventListener("click", () => {
+    const sheet = openSheet({
+      title: "Season",
+      content: optionList(
+        seasons.map((s) => ({ value: s, label: `Season ${s}` })),
+        {
+          selected: active,
+          onSelect: (value) => {
+            sheet.close();
+            load(Number(value));
+          }
+        }
+      )
+    });
+  });
+  fill(
+    section,
+    h("h2.section-title", {}, "Rating Map"),
+    h("div.rating-head", {}, seasonButton, summary),
+    grid,
+    legend,
+    footer
+  );
+  load(active);
+  return section;
 }
 
 function initials(name) {
@@ -534,7 +754,13 @@ export function renderDetail([type, rawId]) {
       logoEl.loading = "eager";
       logoEl.addEventListener("error", () => logoEl.replaceWith(titleEl), { once: true });
     }
-    topbar.querySelector(".detail-topbar-title").textContent = meta.name;
+    // Scrolled top bar shows the title's logo, like the native app.
+    const barTitle = topbar.querySelector(".detail-topbar-title");
+    barTitle.textContent = meta.name;
+    if (meta.logo) {
+      const barLogo = img(meta.logo, "detail-topbar-logo", meta.name);
+      barLogo.addEventListener("load", () => fill(barTitle, barLogo), { once: true });
+    }
 
     let playLabel = "Play";
     if (next) playLabel = `${progress ? "Resume" : "Play"} S${next.season} E${next.episode}`;
@@ -658,14 +884,18 @@ export function renderDetail([type, rawId]) {
     );
     fill(
       body,
+      // Same order as the native app.
       intro,
-      meta.type === "series" ? seasonsBlock(meta, episodes, next?.season) : null,
+      meta.type === "series" && meta.networks?.length
+        ? logosBlock("Networks", meta.networks)
+        : logosBlock("Production", meta.companies),
       castBlock(meta),
+      trailersBlock(meta),
+      ...(meta.type === "series" ? seasonsBlock(meta, episodes, next?.season) : []),
       meta.collection ? tmdbRow(meta.collection.name, meta.collection.parts) : null,
+      detailsBlock(meta),
       tmdbRow("More Like This", meta.recommendations),
-      logosBlock("Networks", meta.networks),
-      logosBlock("Production", meta.companies),
-      detailsBlock(meta)
+      ratingMapBlock(meta, episodes)
     );
   }
 

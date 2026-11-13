@@ -70,8 +70,11 @@ function tmdbPoster(item) {
   );
 }
 
-// Folder page: tabs (All + each source), grid that loads more as you scroll.
-export function renderCollectionFolder([collectionId, folderId]) {
+// Folder page, laid out like Nuvio does for the collection's view mode:
+// - TABBED_GRID: tabs (All + each source) over a grid that keeps loading;
+// - ROWS (and FOLLOW_LAYOUT): a banner, then one row per source; a row's ›
+//   opens that source as a grid (route collection/<c>/<f>/<sourceIndex>).
+export function renderCollectionFolder([collectionId, folderId, sourceIndex]) {
   const collection = store.collections().find((c) => c.id === collectionId);
   const folder = collection?.folders?.find((f) => f.id === folderId);
   const root = h("div.screen.screen-folder");
@@ -134,10 +137,26 @@ export function renderCollectionFolder([collectionId, folderId]) {
     return { el: root };
   }
 
-  const showAll = collection.showAllTab !== false && sources.length > 1;
+  const rowsMode = ["ROWS", "FOLLOW_LAYOUT"].includes(
+    String(collection.viewMode || "TABBED_GRID").toUpperCase()
+  );
+  const single =
+    sourceIndex !== undefined && sources[Number(sourceIndex)] ? Number(sourceIndex) : null;
+  if (rowsMode && single === null)
+    return folderRows({ root, collection, folder, sources, grid, tabs, status, sentinel });
+  if (single !== null) {
+    root.querySelector(".folder-heading .page-title").textContent =
+      sources[single].title || folder.title;
+    root.querySelector(".folder-kicker").textContent = folder.title;
+    cover?.remove();
+  }
+
+  const showAll = single === null && collection.showAllTab !== false && sources.length > 1;
   const tabList = [
     ...(showAll ? [{ key: "all", title: "All" }] : []),
-    ...sources.map((s, i) => ({ key: String(i), title: s.title || `List ${i + 1}` }))
+    ...(single !== null
+      ? [{ key: String(single), title: sources[single].title || "" }]
+      : sources.map((s, i) => ({ key: String(i), title: s.title || `List ${i + 1}` })))
   ];
   let active = tabList[0]?.key;
   let generation = 0;
@@ -244,6 +263,119 @@ export function renderCollectionFolder([collectionId, folderId]) {
     destroy() {
       generation += 1;
       observer?.disconnect();
+    }
+  };
+}
+
+// ROWS layout: banner from the first title, then one row per source.
+function folderRows({ root, collection, folder, sources }) {
+  root.classList.add("is-rows");
+  const heading = root.querySelector(".folder-header");
+  const banner = h("section.folder-banner", { class: "is-loading" });
+  heading.replaceWith(banner);
+  // Like the native app: the folder's own cover art is the banner. Without
+  // one (or if it fails to load), the first title's backdrop is used.
+  let bannerSet = false;
+  if (folder.coverImageUrl) {
+    const cover = img(folder.coverImageUrl, "folder-banner-img is-cover", folder.title);
+    cover.loading = "eager";
+    cover.addEventListener("load", () => cover.classList.add("is-loaded"), { once: true });
+    cover.addEventListener("error", () => (bannerSet = false), { once: true });
+    fill(banner, cover, h("span.folder-banner-shade.is-light"));
+    banner.classList.add("is-cover-banner");
+    banner.classList.remove("is-loading");
+    bannerSet = true;
+  } else {
+    fill(
+      banner,
+      h("span.folder-banner-shade"),
+      h(
+        "div.folder-banner-copy",
+        {},
+        h("div.folder-kicker", {}, collection.title),
+        h("h1.folder-banner-title", {}, folder.title)
+      )
+    );
+  }
+  const rows = h("div.folder-rows");
+  root.append(rows);
+  let alive = true;
+  const setBanner = (item) => {
+    if (bannerSet || !alive || !item?.background) return;
+    bannerSet = true;
+    const art = img(item.background, "folder-banner-img", "");
+    art.loading = "eager";
+    art.addEventListener("load", () => art.classList.add("is-loaded"), { once: true });
+    fill(
+      banner,
+      art,
+      h("span.folder-banner-shade"),
+      h(
+        "div.folder-banner-copy",
+        {},
+        h("div.folder-kicker", {}, `${collection.title} · ${folder.title}`),
+        h("h1.folder-banner-title", {}, item.name),
+        h(
+          "div.folder-banner-meta",
+          {},
+          [
+            item.type === "series" ? "Series" : "Movie",
+            item.year,
+            item.rating ? `★ ${item.rating.toFixed(1)}` : ""
+          ]
+            .filter(Boolean)
+            .join("  •  ")
+        ),
+        item.overview ? h("p.folder-banner-text", {}, item.overview) : null
+      )
+    );
+    banner.classList.remove("is-loading", "is-cover-banner");
+    banner.onclick = () => openTmdbTitle(item);
+  };
+  sources.forEach((source, i) => {
+    const track = h(
+      "div.row-track",
+      {},
+      Array.from({ length: 8 }, () =>
+        h("div.poster-card.is-skeleton", {}, h("div.poster-frame.shimmer"))
+      )
+    );
+    const section = h(
+      "section.row",
+      {},
+      h(
+        "div.row-head",
+        {},
+        h("h2.row-title", {}, source.title || `List ${i + 1}`),
+        h(
+          "button.row-more",
+          {
+            type: "button",
+            "aria-label": `See all ${source.title || ""}`,
+            onclick: () =>
+              navigate(
+                `collection/${encodeURIComponent(collection.id)}/${encodeURIComponent(folder.id)}/${i}`
+              )
+          },
+          icon("chevronRight", 20)
+        )
+      ),
+      track
+    );
+    rows.append(section);
+    tmdbSourceItems(source, 1)
+      .then(({ items }) => {
+        if (!alive) return;
+        if (!items.length) return section.remove();
+        if (i === 0 || !bannerSet) setBanner(items.find((x) => x.background));
+        fill(track, ...items.slice(0, 20).map(tmdbPoster));
+      })
+      .catch(() => section.remove());
+  });
+  return {
+    el: root,
+    destroy() {
+      alive = false;
     }
   };
 }

@@ -1,13 +1,17 @@
-// Skip intro / recap / credits.
-// - Anime: AniSkip (free, works from any website), finding the MyAnimeList id
-//   through arm.haglund.dev from the IMDb or Kitsu id.
-// - TV and movies: IntroDB. Its servers only accept requests from its own
-//   website, so the browser needs a small relay (see relay/README.md). Set
-//   the relay's address in Settings > Playback > Skip segments.
+// Skip intro / recap / credits / preview. Sources, in order of preference:
+// - IntroDB, through an optional relay (its servers only answer introdb.app;
+//   see relay/README.md and Settings > Playback > Skip segments);
+// - TheIntroDB (theintrodb.org): TV and movies by TMDB id, works from any
+//   website, no key (30 requests per 10 s);
+// - AniSkip for anime, with the MyAnimeList id from arm.haglund.dev.
+// Each kind (intro, recap, credits, preview) comes from the first source
+// that has it.
 import { pref } from "../prefs.js";
+import { tmdbAvailable, tmdbIdFor } from "./tmdb.js";
 
 const ARM = "https://arm.haglund.dev/api/v2";
 const ANISKIP = "https://api.aniskip.com/v2";
+const THEINTRODB = "https://api.theintrodb.org/v2/media";
 const cache = new Map();
 
 async function getJSON(url) {
@@ -29,10 +33,39 @@ async function getJSON(url) {
   return request;
 }
 
+// end may be Infinity: "until the end of the video".
 const segment = (start, end, kind) =>
-  Number.isFinite(start) && Number.isFinite(end) && end > start && start >= 0
+  Number.isFinite(start) && (Number.isFinite(end) || end === Infinity) && end > start && start >= 0
     ? { start, end, kind }
     : null;
+
+// TheIntroDB: { intro: [{ start_ms, end_ms }], recap, credits, preview };
+// start_ms null = from the start, end_ms null = to the end.
+async function fromTheIntroDb({ metaId, season, episode, isMovie }) {
+  if (!tmdbAvailable()) return [];
+  const tmdbId = await tmdbIdFor(isMovie ? "movie" : "series", metaId).catch(() => null);
+  if (!tmdbId) return [];
+  const params = new URLSearchParams({ tmdb_id: String(tmdbId) });
+  if (!isMovie) {
+    if (!(season >= 0) || !(episode > 0)) return [];
+    params.set("season", String(season));
+    params.set("episode", String(episode));
+  }
+  const data = await getJSON(`${THEINTRODB}?${params}`);
+  if (!data || data.error || (data.type && data.type !== (isMovie ? "movie" : "tv"))) return [];
+  const out = [];
+  for (const kind of ["intro", "recap", "credits", "preview"]) {
+    const first = (Array.isArray(data[kind]) ? data[kind] : [])[0];
+    if (!first) continue;
+    const start = first.start_ms == null ? 0 : Number(first.start_ms) / 1000;
+    const end = first.end_ms == null ? Infinity : Number(first.end_ms) / 1000;
+    // An open-ended intro or recap would cover the whole video: skip those.
+    if (end === Infinity && (kind === "intro" || kind === "recap")) continue;
+    const seg = segment(start, end, kind);
+    if (seg) out.push(seg);
+  }
+  return out;
+}
 
 // IntroDB: { intro, recap, outro, post_credits } with start_sec/end_sec.
 async function fromIntroDb({ imdbId, season, episode, isMovie }) {
@@ -103,7 +136,8 @@ async function fromAniSkip(ids) {
 }
 
 // playback: { type, metaId, videoId, season, episode }, absoluteEpisode optional.
-// Returns [{ start, end, kind: "intro" | "recap" | "credits" }], one per kind.
+// Returns [{ start, end, kind: "intro" | "recap" | "credits" | "preview" }],
+// one per kind; end may be Infinity (to the end of the video).
 export async function fetchSkipSegments(playback, { absoluteEpisode = 0 } = {}) {
   if (!pref("pb.skipIntro", true)) return [];
   const imdbId = String(playback.metaId || "").match(/^tt\d+/)?.[0] || "";
@@ -112,11 +146,13 @@ export async function fetchSkipSegments(playback, { absoluteEpisode = 0 } = {}) 
   const isMovie = playback.type === "movie";
   const season = Number(playback.season) || 0;
   const episode = Number(playback.episode) || 0;
-  const [introDb, aniSkip] = await Promise.all([
+  const [introDb, theIntroDb, aniSkip] = await Promise.all([
     kitsuId ? [] : fromIntroDb({ imdbId, season, episode, isMovie }),
+    kitsuId ? [] : fromTheIntroDb({ metaId: playback.metaId, season, episode, isMovie }),
     isMovie || !episode ? [] : fromAniSkip({ imdbId, kitsuId, season, episode, absoluteEpisode })
   ]);
   const chosen = new Map();
-  for (const s of [...introDb, ...aniSkip]) if (!chosen.has(s.kind)) chosen.set(s.kind, s);
+  for (const s of [...introDb, ...theIntroDb, ...aniSkip])
+    if (!chosen.has(s.kind)) chosen.set(s.kind, s);
   return [...chosen.values()].sort((a, b) => a.start - b.start);
 }

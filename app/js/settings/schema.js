@@ -1244,12 +1244,12 @@ export const PAGES = {
       },
       {
         t: "note",
-        text: "Anime: AniSkip, built in. TV shows and movies: IntroDB, which only answers apps (not websites), so it needs a small free relay. See relay/README.md in the GitHub repo, then paste the relay address below."
+        text: "Built in: TheIntroDB for TV shows and movies (uses your TMDB key) and AniSkip for anime. Optional: IntroDB as an extra source, through a small free relay (see relay/README.md in the GitHub repo); paste its address below."
       },
       {
         t: "text",
         pref: "pb.skipRelay",
-        title: "IntroDB relay address",
+        title: "IntroDB relay address (optional)",
         sub: "For example https://introdb-relay.yourname.workers.dev",
         ph: "https://…workers.dev",
         secret: false

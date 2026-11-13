@@ -191,7 +191,11 @@ export async function enrichMeta(meta) {
       ...videos.filter((v) => v.type === "Teaser")
     ];
     if (ordered.length)
-      out.trailers = ordered.slice(0, 5).map((v) => ({ ytId: v.key, name: v.name }));
+      out.trailers = ordered.slice(0, 8).map((v) => ({
+        ytId: v.key,
+        name: v.name,
+        year: String(v.published_at || "").slice(0, 4)
+      }));
   }
   if (tmdbModule("more_like_this")) {
     out.recommendations = (data.recommendations?.results || [])
@@ -309,6 +313,7 @@ function listItem(item, mediaType) {
     background: image(item.backdrop_path, "w780"),
     year: String(item.release_date || item.first_air_date || "").slice(0, 4),
     rating: typeof item.vote_average === "number" ? item.vote_average : null,
+    overview: item.overview || "",
     votes: item.vote_count || 0,
     popularity: item.popularity || 0
   };

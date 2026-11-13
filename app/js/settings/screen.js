@@ -45,7 +45,22 @@ function switchEl(on, onChange, label) {
   return el;
 }
 
-function rowShell({ title, sub, trailing, onClick, danger }) {
+// Icons for the category rows, like the native Settings.
+const NAV_ICONS = {
+  account: "person",
+  profiles: "person",
+  appearance: "palette",
+  layout: "grid",
+  content: "search",
+  playback: "play",
+  integrations: "link",
+  tracking: "sort",
+  notifications: "bell",
+  advanced: "gear",
+  about: "info"
+};
+
+function rowShell({ title, sub, trailing, onClick, danger, lead = null }) {
   const copy = h(
     "span.settings-copy",
     {},
@@ -55,6 +70,7 @@ function rowShell({ title, sub, trailing, onClick, danger }) {
   return h(
     onClick ? "button.settings-row" : "div.settings-row.is-static",
     { type: onClick ? "button" : null, onclick: onClick, class: danger ? "is-danger" : "" },
+    lead ? h("span.settings-row-icon", {}, icon(lead, 22)) : null,
     copy,
     trailing === undefined ? (onClick ? icon("chevronRight", 22) : null) : trailing
   );
@@ -117,6 +133,7 @@ function renderRow(row, ctx) {
       return rowShell({
         title: row.title,
         sub: row.sub,
+        lead: ctx.categoryPage ? NAV_ICONS[row.page] || null : null,
         onClick: () => (row.page === "profiles" ? navigate("profiles") : ctx.go(row.page))
       });
     case "toggle": {
@@ -779,7 +796,7 @@ function pageBody(page, ctx) {
 
 function categoryBody(cat, ctx) {
   return [
-    groupCard(cat.rows.map((row) => renderRow(row, ctx))),
+    groupCard(cat.rows.map((row) => renderRow(row, { ...ctx, categoryPage: true }))),
     h(
       "div.set-footer",
       {},
