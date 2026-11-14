@@ -809,6 +809,13 @@ export const PAGES = {
         def: true
       },
       {
+        t: "toggle",
+        pref: "pb.reports",
+        title: "Send playback problem reports to your relay",
+        sub: "When a stream won't play, a short note (add-on, server name, file title, error) is kept on your Cloudflare relay for 7 days, so it can be fixed. Never the link or your keys.",
+        def: true
+      },
+      {
         t: "text",
         pref: "pb.streamRelayUrl",
         title: "Stream relay address",

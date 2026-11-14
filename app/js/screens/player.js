@@ -767,6 +767,7 @@ export function renderPlayer() {
           : "Direct"
       ],
       ["Repackager", remux ? "" : remuxNote],
+      ["Tried before", tried.join(" • ")],
       ["Subtitles", activeSubtitle ? activeSubtitle.label : "Off"]
     ].filter(([, value]) => value);
     openPanel(
@@ -1621,6 +1622,41 @@ export function renderPlayer() {
   let viaRelayUsed = false;
   let remuxTriedFor = "";
   let remuxNote = ""; // why the repackager couldn't be used, for Playback Info
+  const tried = []; // sources that didn't play this time, and why
+
+  // Sends a short playback-problem report to your stream relay (kept 7
+  // days on your Cloudflare account) so failures can be looked into. Only
+  // the add-on, server name, file title and error go: never the link
+  // itself, which can hold your debrid key.
+  function report(stage, extra = {}) {
+    if (!pref("pb.streamRelay", true) || !pref("pb.reports", true)) return;
+    const base = String(pref("pb.streamRelayUrl", "") || DEFAULT_STREAM_RELAY).replace(/\/+$/, "");
+    if (!/^https:\/\/[^\s/?#]+$/.test(base)) return;
+    let host = "";
+    try {
+      host = new URL(playback.url).host;
+    } catch (_) {
+      host = "";
+    }
+    const body = JSON.stringify({
+      stage,
+      addon: playback.addonName || "",
+      title: String(playback.streamTitle || "").slice(0, 140),
+      host,
+      ua: navigator.userAgent.slice(0, 200),
+      mms: !!window.ManagedMediaSource,
+      mse: !!window.MediaSource,
+      standalone: window.navigator.standalone === true,
+      t: Math.round(video.currentTime || 0),
+      ...extra
+    });
+    fetch(`${base}/log`, {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "text/plain" },
+      keepalive: true
+    }).catch(() => {});
+  }
   const errorText = (error) =>
     [error?.message, error?.detail].filter(Boolean).join(" · ").slice(0, 160) || String(error);
   // MKV by its link, its title, or the add-on's file name / description
@@ -1685,11 +1721,18 @@ export function renderPlayer() {
           handle.input.dispose?.();
           return;
         }
+        report("repackaged", {
+          viaRelay: viaRelayUsed,
+          video: handle.videoCodec,
+          audio: handle.audio.map((a) => `${a.codecString || a.codec}${a.playable ? "" : " (no)"}`),
+          duration: Math.round(handle.duration)
+        });
         remux = playMkv(handle, video, {
           startAt,
           audioId: preferredRemuxAudio(handle),
           onError: (error) => {
             remuxNote = `Stopped: ${errorText(error)}`;
+            report("repackager-stopped", { note: remuxNote });
             if (url === playback.url) cantPlay("Repackaging this MKV stopped working.");
           }
         });
@@ -1698,6 +1741,11 @@ export function renderPlayer() {
         return;
       } catch (error) {
         if (closed || url !== playback.url) return;
+        report("repackager-failed", {
+          kind: error?.kind || "",
+          note: remuxNote || errorText(error),
+          forced: forceRemux
+        });
         // A file with formats Safari can't play: no point handing it over.
         if (error?.kind === "unsupported") {
           cantPlay(error.message);
@@ -1737,6 +1785,20 @@ export function renderPlayer() {
 
   async function cantPlay(reason) {
     if (failing || closed) return;
+    tried.push(
+      `${playback.addonName || "Source"}: ${reason}${remuxNote ? ` (${remuxNote})` : ""}`.slice(
+        0,
+        220
+      )
+    );
+    report("cant-play", {
+      reason,
+      note: remuxNote,
+      remux: !!remux,
+      readyState: video.readyState,
+      networkState: video.networkState,
+      mediaError: video.error ? `${video.error.code} ${video.error.message || ""}`.trim() : ""
+    });
     // Safari couldn't open it and it wasn't tried as an MKV (its name didn't
     // say): give the repackager one go before moving on.
     if (

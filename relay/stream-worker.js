@@ -12,6 +12,8 @@
 // - only GET/HEAD, only http(s), no cookies or credentials forwarded.
 //
 // Request: GET /?u=<encoded stream URL>   (Range header passed through)
+// Also: POST /log with a small JSON playback-problem report (optional LOG
+// KV binding; reports expire after 7 days).
 
 const ALLOWED_ORIGINS = [
   /^https:\/\/kai122\.github\.io$/,
@@ -55,7 +57,7 @@ function reply(status, text, origin) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
     const allowed = ALLOWED_ORIGINS.some((re) => re.test(origin)) ? origin : "";
     if (request.method === "OPTIONS")
@@ -63,6 +65,24 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/health") return reply(200, "ok", allowed);
     if (!allowed) return reply(403, "This relay only serves the Nuvio app.", "");
+
+    // Playback problem reports from the app (no links or keys, just what
+    // failed), kept for 7 days in the LOG store so they can be looked at.
+    if (url.pathname === "/log" && request.method === "POST") {
+      if (!env?.LOG) return new Response(null, { status: 204, headers: cors(allowed) });
+      const text = (await request.text()).slice(0, 4000);
+      let entry;
+      try {
+        entry = JSON.parse(text);
+      } catch (_) {
+        return reply(400, "Bad report", allowed);
+      }
+      const key = `${new Date().toISOString()}-${Math.random().toString(36).slice(2, 8)}`;
+      await env.LOG.put(key, JSON.stringify({ ...entry, country: request.cf?.country || "" }), {
+        expirationTtl: 7 * 86400
+      });
+      return new Response(null, { status: 204, headers: cors(allowed) });
+    }
     if (request.method !== "GET" && request.method !== "HEAD")
       return reply(405, "Method not allowed", allowed);
 
