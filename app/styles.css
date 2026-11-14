@@ -4905,3 +4905,9 @@ html.is-standalone body {
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
 }
+
+/* An add-on's utility entry (e.g. Comet "Sync debrid account library now.") */
+.stream-card.is-action {
+  opacity: 0.85;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+}

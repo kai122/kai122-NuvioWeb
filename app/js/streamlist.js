@@ -46,6 +46,16 @@ export function playability(stream) {
   return "unknown";
 }
 
+// Some add-ons list a utility "stream" that is really a button, such as
+// Comet's "Sync debrid account library now." Opening it plays a status clip,
+// so it's never auto-played and tapping it just runs the action.
+const ACTION_RE =
+  /\b(sync|refresh|rescan|update)\b[^\n]{0,40}\b(debrid|account|library|cache)\b|\bclear (the )?cache\b/i;
+export function isActionStream(stream) {
+  const text = [stream?.name, stream?.title, stream?.description].filter(Boolean).join("\n");
+  return ACTION_RE.test(text) && !/\b(\d{3,4}p|4k|2160p|x26[45]|hevc|web-?dl|bluray)\b/i.test(text);
+}
+
 // "MKV files": try them in the app first (Safari plays many MKVs, depending on
 // the formats inside), or always send them to a player app.
 export function mkvToPlayerApp() {
@@ -59,7 +69,9 @@ export function autoPick(groups, { mode, pattern = "", bingeGroup = "" }) {
     group.streams
       .filter(
         (stream) =>
-          safeHttpUrl(stream.url) && (!mkvToPlayerApp() || playability(stream) !== "external")
+          safeHttpUrl(stream.url) &&
+          !isActionStream(stream) &&
+          (!mkvToPlayerApp() || playability(stream) !== "external")
       )
       .map((stream) => ({ stream, addon: group.addon }))
   );
@@ -143,19 +155,24 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
     const name = (stream.name || addon.manifest.name).trim();
     const isCurrent = playUrl && playUrl === currentUrl;
     const size = pref("streams.sizeBadges", true) ? streamSize(stream) : "";
-    const isMkv = playUrl && playability(stream) === "external";
+    const isAction = !!playUrl && isActionStream(stream);
+    const isMkv = playUrl && !isAction && playability(stream) === "external";
     const needsPlayer = isMkv && mkvToPlayerApp();
     return h(
       "div.stream-card",
       {
-        class: `${playUrl ? "" : "is-disabled"} ${isCurrent ? "is-current" : ""} ${needsPlayer ? "needs-player" : ""} badge-${pref("streams.badgePos", "bottom")}`
+        class: `${playUrl ? "" : "is-disabled"} ${isCurrent ? "is-current" : ""} ${needsPlayer ? "needs-player" : ""} ${isAction ? "is-action" : ""} badge-${pref("streams.badgePos", "bottom")}`
       },
       h(
         "button.stream-main",
         {
           type: "button",
           onclick: () => {
-            if (needsPlayer) {
+            if (isAction) {
+              // Ask the add-on to run it in the background; nothing to watch.
+              fetch(playUrl, { mode: "no-cors", credentials: "omit" }).catch(() => {});
+              toast(`Asked ${addon.manifest.name} to do it. Give it a minute, then refresh.`);
+            } else if (needsPlayer) {
               onExternal(playUrl, () => onPlay(choiceFor({ stream, addon })), true);
             } else if (playUrl) {
               onPlay(choiceFor({ stream, addon }));
@@ -193,7 +210,8 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
         h(
           "span.stream-badges",
           {},
-          size ? h("span.stream-size", {}, size) : null,
+          isAction ? h("span.stream-size", {}, "Action, not a video") : null,
+          size && !isAction ? h("span.stream-size", {}, size) : null,
           needsPlayer
             ? h("span.stream-size.is-player", {}, "Opens in VLC / Infuse")
             : isMkv
@@ -201,7 +219,7 @@ export function createStreamList(context, { onPlay, onExternal, onUpdate, curren
               : null
         )
       ),
-      playUrl
+      playUrl && !isAction
         ? h(
             "button.stream-more",
             {

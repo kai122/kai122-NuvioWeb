@@ -7,7 +7,13 @@ import { fetchSubtitles, fetchMeta, preloadStreams, fetchStreams } from "../addo
 import { PAGES } from "../settings/schema.js";
 import { seriesEpisodes, episodeContext, isReleased } from "./detail.js";
 import { fetchSkipSegments } from "../services/skip.js";
-import { createStreamList, playability, choiceFor, mkvToPlayerApp } from "../streamlist.js";
+import {
+  createStreamList,
+  playability,
+  choiceFor,
+  mkvToPlayerApp,
+  isActionStream
+} from "../streamlist.js";
 import { probeStream, describeCodec } from "../mkvprobe.js";
 import {
   remuxAvailable,
@@ -1518,7 +1524,12 @@ export function renderPlayer() {
     const candidates = groups
       .sort((a, b) => order(a) - order(b))
       .flatMap((g) => g.streams.map((stream) => ({ stream, addon: g.addon })))
-      .filter(({ stream }) => safeHttpUrl(stream.url) && !triedUrls.has(safeHttpUrl(stream.url)));
+      .filter(
+        ({ stream }) =>
+          safeHttpUrl(stream.url) &&
+          !isActionStream(stream) &&
+          !triedUrls.has(safeHttpUrl(stream.url))
+      );
     const isMkv = ({ stream }) => playability(stream) === "external";
     const next =
       candidates.find((c) => !isMkv(c)) ||
