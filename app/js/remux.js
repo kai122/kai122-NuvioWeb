@@ -87,9 +87,13 @@ export async function openMkv(url) {
     const text = String(error?.message || error);
     // Not readable as MKV here: let Safari try the link the normal way.
     if (/not.*(recogni|support)|unsupported|format/i.test(text))
-      throw new RemuxError("failed", "This file couldn't be read as an MKV.");
+      throw Object.assign(new RemuxError("failed", "This file couldn't be read as an MKV."), {
+        detail: text
+      });
     // A fetch that fails outright from another site is almost always CORS.
-    throw new RemuxError("blocked", "This host doesn't let the app read the file.");
+    throw Object.assign(new RemuxError("blocked", "This host doesn't let the app read the file."), {
+      detail: text
+    });
   }
   if (!video) {
     input.dispose?.();

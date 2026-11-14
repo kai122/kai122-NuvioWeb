@@ -766,6 +766,7 @@ export function renderPlayer() {
           ? `MKV, repackaged in the app${viaRelayUsed ? " (through your relay)" : ""}`
           : "Direct"
       ],
+      ["Repackager", remux ? "" : remuxNote],
       ["Subtitles", activeSubtitle ? activeSubtitle.label : "Off"]
     ].filter(([, value]) => value);
     openPanel(
@@ -1619,6 +1620,9 @@ export function renderPlayer() {
   let remux = null;
   let viaRelayUsed = false;
   let remuxTriedFor = "";
+  let remuxNote = ""; // why the repackager couldn't be used, for Playback Info
+  const errorText = (error) =>
+    [error?.message, error?.detail].filter(Boolean).join(" · ").slice(0, 160) || String(error);
   // MKV by its link, its title, or the add-on's file name / description
   // (Comet's links and titles often don't say "mkv").
   const looksMkv = (url) =>
@@ -1651,6 +1655,7 @@ export function renderPlayer() {
   async function loadSource(url, startAt = 0, { forceRemux = false } = {}) {
     stopRemux();
     viaRelayUsed = false;
+    remuxNote = "";
     watchStart();
     if ((forceRemux || looksMkv(url)) && pref("pb.remux", true) && remuxAvailable()) {
       remuxTriedFor = url;
@@ -1660,15 +1665,22 @@ export function renderPlayer() {
         try {
           handle = await openMkv(url);
         } catch (error) {
+          remuxNote = `Direct: ${errorText(error)}`;
           // The host won't let the app read the file: go through the relay.
           const viaRelay =
             error?.kind === "blocked" && pref("pb.streamRelay", true)
               ? relayed(url, pref("pb.streamRelayUrl", "") || DEFAULT_STREAM_RELAY)
               : "";
           if (!viaRelay || closed || url !== playback.url) throw error;
-          handle = await openMkv(viaRelay);
+          try {
+            handle = await openMkv(viaRelay);
+          } catch (relayError) {
+            remuxNote += ` | Relay: ${errorText(relayError)}`;
+            throw relayError;
+          }
           viaRelayUsed = true;
         }
+        remuxNote = "";
         if (closed || url !== playback.url) {
           handle.input.dispose?.();
           return;
@@ -1676,7 +1688,8 @@ export function renderPlayer() {
         remux = playMkv(handle, video, {
           startAt,
           audioId: preferredRemuxAudio(handle),
-          onError: () => {
+          onError: (error) => {
+            remuxNote = `Stopped: ${errorText(error)}`;
             if (url === playback.url) cantPlay("Repackaging this MKV stopped working.");
           }
         });

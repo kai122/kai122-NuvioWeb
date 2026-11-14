@@ -19,6 +19,10 @@ const ALLOWED_ORIGINS = [
 ];
 const VIDEO_TYPES =
   /^(video\/|audio\/|application\/(octet-stream|x-matroska|mp4|vnd\.apple\.mpegurl|x-mpegurl|force-download|binary))/i;
+// Where add-on links led (per worker instance, short-lived).
+const resolved = new Map();
+const REMEMBER_MS = 20 * 60 * 1000;
+
 const PASS_HEADERS = [
   "content-type",
   "content-length",
@@ -75,15 +79,38 @@ export default {
     const range = request.headers.get("Range");
     if (range && /^bytes=\d*-\d*$/.test(range)) headers.set("Range", range);
 
-    let upstream;
-    try {
-      upstream = await fetch(target.toString(), {
-        method: request.method,
-        headers,
-        redirect: "follow"
-      });
-    } catch (_) {
-      return reply(502, "The stream's server didn't answer.", allowed);
+    // Add-on links (e.g. Torrentio's) redirect to the debrid file. The player
+    // reads the file in many pieces, so remember where the link led instead
+    // of asking the add-on again for every piece.
+    const key = target.toString();
+    const remembered = resolved.get(key);
+    let upstream = null;
+    if (remembered && remembered.until > Date.now()) {
+      try {
+        upstream = await fetch(remembered.url, {
+          method: request.method,
+          headers,
+          redirect: "follow"
+        });
+        if (!upstream.ok && upstream.status !== 206) {
+          upstream.body?.cancel();
+          upstream = null; // expired link: resolve again below
+        }
+      } catch (_) {
+        upstream = null;
+      }
+      if (!upstream) resolved.delete(key);
+    }
+    if (!upstream) {
+      try {
+        upstream = await fetch(key, { method: request.method, headers, redirect: "follow" });
+      } catch (_) {
+        return reply(502, "The stream's server didn't answer.", allowed);
+      }
+      if ((upstream.ok || upstream.status === 206) && upstream.url && upstream.url !== key) {
+        if (resolved.size > 300) resolved.clear();
+        resolved.set(key, { url: upstream.url, until: Date.now() + REMEMBER_MS });
+      }
     }
     if (!upstream.ok && upstream.status !== 206) {
       upstream.body?.cancel();
