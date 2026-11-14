@@ -1618,7 +1618,22 @@ export function renderPlayer() {
   // as it is, with the checks above.
   let remux = null;
   let viaRelayUsed = false;
-  const looksMkv = (url) => /\bmkv\b/i.test(`${url} ${playback.streamTitle || ""}`);
+  let remuxTriedFor = "";
+  // MKV by its link, its title, or the add-on's file name / description
+  // (Comet's links and titles often don't say "mkv").
+  const looksMkv = (url) =>
+    /\bmkv\b/i.test(
+      [
+        url,
+        playback.streamTitle,
+        playback.stream?.behaviorHints?.filename,
+        playback.stream?.title,
+        playback.stream?.description
+      ]
+        .filter(Boolean)
+        .join(" ")
+    ) ||
+    (!!playback.stream && playability(playback.stream) === "external");
   function stopRemux() {
     remux?.destroy();
     remux = null;
@@ -1633,12 +1648,13 @@ export function renderPlayer() {
     }
     return null;
   }
-  async function loadSource(url, startAt = 0) {
+  async function loadSource(url, startAt = 0, { forceRemux = false } = {}) {
     stopRemux();
     viaRelayUsed = false;
     watchStart();
-    if (looksMkv(url) && pref("pb.remux", true) && remuxAvailable()) {
-      setLoading("Preparing MKV…");
+    if ((forceRemux || looksMkv(url)) && pref("pb.remux", true) && remuxAvailable()) {
+      remuxTriedFor = url;
+      setLoading(forceRemux ? "Trying it as an MKV…" : "Preparing MKV…");
       try {
         let handle;
         try {
@@ -1674,6 +1690,11 @@ export function renderPlayer() {
           cantPlay(error.message);
           return;
         }
+        // Already handed to Safari once and it failed: move on.
+        if (forceRemux) {
+          cantPlay("Safari can't play this file.");
+          return;
+        }
         // The host doesn't allow it (CORS): let Safari try the link itself.
       }
     }
@@ -1703,6 +1724,20 @@ export function renderPlayer() {
 
   async function cantPlay(reason) {
     if (failing || closed) return;
+    // Safari couldn't open it and it wasn't tried as an MKV (its name didn't
+    // say): give the repackager one go before moving on.
+    if (
+      !remux &&
+      remuxTriedFor !== playback.url &&
+      pref("pb.remux", true) &&
+      remuxAvailable() &&
+      !/m3u8|\/hls\//i.test(playback.url)
+    ) {
+      clearWatch();
+      hideStuck();
+      loadSource(playback.url, Math.max(0, video.currentTime || 0), { forceRemux: true });
+      return;
+    }
     failing = true;
     clearWatch();
     hideStuck();
